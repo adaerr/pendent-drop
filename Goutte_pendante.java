@@ -172,6 +172,8 @@ public class Goutte_pendante implements ExtendedPlugInFilter, Runnable,
     double[] fitparam = new double[Nfitparam];
     boolean[] fitMe = new boolean[Nfitparam];
 
+    final static String pluginName = "Goutte pendante";
+
     ImagePlus imp;
     ImageProcessor ip;
 
@@ -207,7 +209,11 @@ public class Goutte_pendante implements ExtendedPlugInFilter, Runnable,
             return DONE;
         }
 
-        if (IJ.versionLessThan("1.43u")) return DONE;
+        if (IJ.versionLessThan("1.43u")) {
+            IJ.error(pluginName,
+                     "This plug-in requires ImageJ version >= 1.43u.");
+            return DONE; 
+        }
         if (imp == null) {
             IJ.noImage();
             return DONE;
@@ -399,9 +405,9 @@ public class Goutte_pendante implements ExtendedPlugInFilter, Runnable,
         float[] centerX = new float[roi.height];
         float[] centerY = new float[roi.height];
         float[] halfWidth = new float[roi.height];
-        for (int y=0; y < roi.height; y++) {
+        for (int y=0; y < roi.height; y++) {// y increases upwards in ROI
             centerY[y] = roi.y + roi.height - 1 - y;
-            float centerXacc = 0;
+            float centerXacc = 0;// accumulator for center of gravity along line
             int count = 0;
             for (int x=0; x<roi.width; x++) {
                 if (ip.getPixelValue(roi.x + x,
@@ -423,6 +429,11 @@ public class Goutte_pendante implements ExtendedPlugInFilter, Runnable,
         //List<Float> centerXlist = Arrays.asList(centerX);
         //List<float> halfWidthList = Arrays.asList(halfWidth);
 
+        //for (int y=0; y < roi.height; y++) {
+        //    if (!Float.isNaN(centerX[y]))
+        //        ip.putPixel((int)centerX[y],(int)centerY[y],255);
+        //}
+
         // tip curvature: linear fit to halfWidth near tip
         final int tipNeighbourhood = 5;// fit on these many points
         float[] radiusSquare = new float[tipNeighbourhood];
@@ -434,18 +445,31 @@ public class Goutte_pendante implements ExtendedPlugInFilter, Runnable,
                                     radiusSquare);
         param[3] = Math.abs(tipFit.getCoeff(1))/2*param[6];
 
-
         // direction of gravity: tilt of center line
-        Polynome axisFit = linearFit(Arrays.copyOfRange(centerY, tip,
-                                                        centerY.length),
-                                     Arrays.copyOfRange(centerX, tip,
-                                                        centerX.length));
-        param[4] = (float)(Math.atan(axisFit.getCoeff(1))*180/Math.PI);
+        // fitting either to beginning or whole line does not work too well
+        //final int gravPoints = 5;// fit on these many points near
+        //// upper edge of ROI
+        //final int to = centerY.length;
+        //final int from = to - gravPoints;
+        //Polynome axisFit = linearFit(Arrays.copyOfRange(centerY, from, to),
+        //                             Arrays.copyOfRange(centerX, from, to));
+        //final double tiltAngleRad = -Math.atan(axisFit.getCoeff(1));
+        //
+        // link middle of top line to estimated center of drop
+        // (one radius above tip)
+        final float axisX = centerX[roiHeightPix-1] - centerX[tip];
+        final float axisY = centerY[roiHeightPix-1] - centerY[tip]
+            + param[3]/param[6];
+        final double tiltAngleRad = Math.atan2(axisX,-axisY);
+        param[4] = (float)(tiltAngleRad*180/Math.PI);
 
-        // detected drop tip
+        // detected drop tip (more precise than centerY[tip]*param[6])
         param[1] = centerX[tip]*param[6];
         param[2] = -tipFit.getCoeff(0)/tipFit.getCoeff(1)*param[6];
-        // more precise than centerY[tip]*param[6]
+        // the former expression assumes the drop is vertical, but we can
+        // correct for tilted image:
+        param[1] -= param[3] * (float)Math.sin(tiltAngleRad);
+        param[2] -= param[3] * (1 - (float)Math.cos(tiltAngleRad));
 
         // capillary length: from curvature difference
 
@@ -488,6 +512,7 @@ public class Goutte_pendante implements ExtendedPlugInFilter, Runnable,
             xB[y] -= mxB;
             yB[y] -= myB;
         }
+
         Polynome bellyFit = quadraticFit(xB, yB);
 
         // and calculate curvatures at yBelly
@@ -496,18 +521,19 @@ public class Goutte_pendante implements ExtendedPlugInFilter, Runnable,
             (float)(Math.cos(Math.atan(bellyFit.getCoeff(1))));
         float c0 = param[6]/param[3];// tip curvature
 
-        IJ.log("c0 = "+c0+", c1 = "+c1+", c2 = "+c2);
+        //IJ.log("c0 = "+c0+", c1 = "+c1+", c2 = "+c2);
 
         // pressure difference between yBelly and tip gives capillary
         // length estimate
         param[0] = (float)Math.sqrt((tip-yBelly)/(c1+c2-2*c0))*param[6];
 
-        // density contrast: if image calibrated suppose water at 4
-        // deg C on earth etc, in grams per mm^2 and seconds^2:
-        if (param[6] == 1)
-            param[5] = 9.81f;
+        // initialise density contrast if image calibrated
+        // (not very important...)
+        // for water at 4 deg C on earth etc, in grams per mm^2 and seconds^2:
+        if (param[6] == 1)// length scale uncalibrated?
+            param[5] = 1.0f;// don't bother
         else
-            param[5] = 1.0f;
+            param[5] = 9.81f;
     }
 
     /** Entry point and loop of the worker thread which updates the contour
@@ -558,6 +584,7 @@ public class Goutte_pendante implements ExtendedPlugInFilter, Runnable,
 
                     final long time2 = System.currentTimeMillis();
                     IJ.showStatus("fit took "+(time2-timeStart)+"ms");
+                    IJ.log("fit took "+(time2-timeStart)+"ms");
 
                     // fit done: update dialog to reflect new parameters
                     setDialogParameters();
@@ -898,6 +925,7 @@ public class Goutte_pendante implements ExtendedPlugInFilter, Runnable,
         return visibleDrop;
     }
 
+    // used only for debugging purposes
     int getShapeLength(Shape s) {
         PathIterator iter = s.getPathIterator(null);
         int size = 0;
@@ -908,22 +936,97 @@ public class Goutte_pendante implements ExtendedPlugInFilter, Runnable,
         return size;
     }
 
-    double fitQuality(Shape drop) {
+    double getLineQuality(int y, int xl, int xr) {
         final double backgroundVal = 255.;
         double Q = 0;
-        for (int y = roi.y; y < roi.y+roi.height; y++) {
-            double Qtmp = 0;
-            for (int x = roi.x; x < roi.x+roi.width; x++) {
-                if (drop.contains(x,y))
-                    Qtmp += ip.getPixelValue(x,y);
-                else
-                    Qtmp += backgroundVal - ip.getPixelValue(x,y);
-            }
-            Q += Qtmp;
+        for (int x = roi.x; x < roi.x+roi.width; x++) {
+            if (x < xl || x > xr)
+                Q += backgroundVal - ip.getPixelValue(x,y);
+            else
+                Q += ip.getPixelValue(x,y);
         }
-        //Q += drop.getBounds2D().getWidth()/roi.width;
         return Q;
     }
+
+    double fitQuality(Shape drop) {
+        double Q = 0;
+        int xleft,xright;
+        final int xmax = roi.y+roi.height;
+        xleft = xmax; // signals drop limits are yet unkown
+        xright = xmax; // signals drop limits are yet unkown
+        java.awt.geom.Rectangle2D bounds = drop.getBounds2D();
+        for (int y = roi.y; y < roi.y+roi.height; y++) {
+            if (y < bounds.getMinY() || y > bounds.getMaxY()) {
+                Q += getLineQuality(y, 1, 0); // whole line outside contour
+            } else { // potentially intersecting contour
+                // search for limits of drop contour
+                if (xleft >= xmax) {
+                    // exhaustive search for left/right drop bounds
+                    for (xleft = roi.x; xleft < xmax; xleft++)
+                        if (drop.contains(xleft,y)) break;
+                    for (xright = xleft+1; xright < xmax; xright++)
+                        if (!drop.contains(xleft,y)) break;
+                    xright--;
+                    // xleft and xright are now the first and last integer
+                    // coordinates contained in the drop contour
+                    // (if no point is inside the drop contour,
+                    // xleft = xmax and xright = xmax-1)
+                } else {// use previous bounds as initial guesses
+                    // left bound
+                    if (drop.contains(xleft,y)) {// search to left
+                        do xleft--;
+                        while (xleft >= roi.x && drop.contains(xleft,y));
+                        xleft++;
+                        // assert( drop.contains(xleft,y) && xleft >= roi.x )
+                    } else {// search to right
+                        final int xstart = xleft;
+                        do xleft++;
+                        while (xleft < xmax && !drop.contains(xleft,y));
+                        if (xleft >= xmax) { // nothing found, search remainder
+                            for (xleft = roi.x; xleft < xstart;
+                                 xleft++)
+                                if (drop.contains(xleft,y)) break;
+                            if (xleft >= xstart) xleft = xmax; // nothing found
+                        }
+                    }
+                    // assert ( xleft >= xstart || drop.contains(xleft,y) )
+                    // right bound
+                    if (xleft < xmax) {
+                        xright = Math.max(xleft, xright);
+                        if (drop.contains(xright,y)) {// search to right
+                            do xright++;
+                            while (xright < xmax && drop.contains(xright,y));
+                            xright--;
+                        } else {// search to left
+                            do xright--;
+                            while (xright >= roi.x && !drop.contains(xright,y));
+                        }
+                    }
+                    // assert ( xleft >= xstart || drop.contains(xright,y) )
+                }
+                Q += getLineQuality(y, xleft, xright);
+            }
+        }
+        return Q;
+    }
+    /* old straight forward variant, was bottleneck of calculation
+     * (Shape.contains() seems quite expensive) */
+    //double fitQuality(Shape drop) {
+    //    final double backgroundVal = 255.;
+    //    double Q = 0;
+    //    for (int y = roi.y; y < roi.y+roi.height; y++) {
+    //        double Qtmp = 0;
+    //        for (int x = roi.x; x < roi.x+roi.width; x++) {
+    //            if (drop.contains(x,y))
+    //                Qtmp += ip.getPixelValue(x,y);
+    //            else
+    //                Qtmp += backgroundVal - ip.getPixelValue(x,y);
+    //        }
+    //        Q += Qtmp;
+    //    }
+    //    //Q += drop.getBounds2D().getWidth()/roi.width;
+    //    return Q;
+    //}
 
     private class ParameterSpacePoint {
         double[] x;
@@ -1495,7 +1598,7 @@ public class Goutte_pendante implements ExtendedPlugInFilter, Runnable,
                 "parameters automatically.\n"+
                 "[For more details see PDF documentation below]");
         doc.put("Author", "Adrian Daerr");
-        doc.put("Version", "2010-09-28");
+        doc.put("Version", "2013-04-15");
         doc.put("Licence", "GPL");
         doc.put("Author homepage URL",
                 "http://www.msc.univ-paris-diderot.fr/~daerr/");
