@@ -172,7 +172,7 @@ public class Goutte_pendante implements ExtendedPlugInFilter, Runnable,
     double[] fitparam = new double[Nfitparam];
     boolean[] fitMe = new boolean[Nfitparam];
 
-    final static String pluginName = "Goutte pendante";
+    final static String pluginMenuName = "Pendant drop";
 
     ImagePlus imp;
     ImageProcessor ip;
@@ -210,7 +210,7 @@ public class Goutte_pendante implements ExtendedPlugInFilter, Runnable,
         }
 
         if (IJ.versionLessThan("1.43u")) {
-            IJ.error(pluginName,
+            IJ.error(pluginMenuName,
                      "This plug-in requires ImageJ version >= 1.43u.");
             return DONE; 
         }
@@ -259,7 +259,7 @@ public class Goutte_pendante implements ExtendedPlugInFilter, Runnable,
         dialog.addPreviewCheckbox(pfr);
 
         workerThread = new Thread(this);
-        workerThread.setName("Pendant drop calculating thread");
+        workerThread.setName(pluginMenuName+" calculating thread");
         workerRetire = false;
         workerDoFit = false;
         workToDo = true;
@@ -579,7 +579,7 @@ public class Goutte_pendante implements ExtendedPlugInFilter, Runnable,
                     if (haveFreeParam)
                         Q = minPowell(fitparam, fitMe, calcMatchVal, 100);
                     else
-                        IJ.error("Goutte pendante",
+                        IJ.error(pluginMenuName,
                                  "Please check at least one parameter to fit");
 
                     final long time2 = System.currentTimeMillis();
@@ -1427,7 +1427,7 @@ public class Goutte_pendante implements ExtendedPlugInFilter, Runnable,
         rootpane.setLayout(new BoxLayout(rootpane, BoxLayout.PAGE_AXIS));
         rootpane.setBorder(BorderFactory.createEmptyBorder(5, 5, 0, 5));
         
-        JLabel l = new JLabel("Goutte_pendante");
+        JLabel l = new JLabel(pluginMenuName);
         Font normalFont = l.getFont();
         l.setFont(new Font(Font.SANS_SERIF, Font.BOLD,
                            normalFont.getSize()*7/5));
@@ -1583,7 +1583,7 @@ public class Goutte_pendante implements ExtendedPlugInFilter, Runnable,
     public java.util.Map<String,String> getDocumentation() {
         java.util.Map<String,String> doc = 
             new java.util.LinkedHashMap<String,String>();
-        doc.put("About", "Goutte_pendante\n\n"+
+        doc.put("About", pluginMenuName+"\n\n"+
                 "Plug-in for liquid surface tension measurement.\n"+
                 "This plug-in allows interactive adjustment of a\n"+
                 "theoretical profile to an image of a pendant drop.\n"+
