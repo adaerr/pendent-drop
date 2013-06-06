@@ -11,7 +11,7 @@
 
 \usepackage[pdftitle={Pendant drop measurement with ImageJ},
     pdfauthor={Adrian Daerr},
-    pdfsubject={Pendant drop plug-in for ImageJ, Université Paris Diderot},
+    pdfsubject={Pendant drop Plugin for ImageJ, Université Paris Diderot},
     pdfkeywords={pendant drop, ImageJ},
     linkcolor=blue,pdfborder={0 0 0},citecolor=black,
     filecolor=blue,urlcolor=blue]{hyperref}
@@ -49,7 +49,7 @@
 \begin{document}
 
 \subject{Goutte\_pendante}
-\title{An ImageJ plug-in for surface tension measurement through the
+\title{An ImageJ Plugin for surface tension measurement through the
   pendant drop method}
 \author{Adrian Daerr, Université Paris-Diderot}
 \date{August 2010, last updated \today}
@@ -88,16 +88,16 @@
 \begin{abstract}
   The pendant drop method for surface tension measurement consists in
   analysing the shape of a drop hanging from a capillary tube
-  (Fig.~\ref{fig:pendantdropphoto}). The \gouttependante plug-in for
+  (Fig.~\ref{fig:pendantdropphoto}). The \gouttependante Plugin for
   \href{http://imagej.nih.gov/ij/}{ImageJ}~\cite{ImageJ} provides a
   tool to match a theoretical profile to the contour of a pendant
   drop, either interactively or automatically. The surface tension can
   then be easily calculated from the best matching parameters.
-  Section~\ref{sec:description} describes the plug-in functionality,
+  Section~\ref{sec:description} describes the Plugin functionality,
   section~\ref{sec:prerequisites} lists the properties that the input
-  image must have for the plug-in to give meaningful results. Sections
+  image must have for the Plugin to give meaningful results. Sections
   \ref{sec:installation} and \ref{sec:usage} explain the installation
-  and the usage of the plug-in. Finally sections~\ref{sec:theory} and
+  and the usage of the Plugin. Finally sections~\ref{sec:theory} and
   \ref{sec:numerics} describe the underlying theoretical framework and
   the plugin's inner workings, respectively.
 \end{abstract}
@@ -113,26 +113,26 @@ inverse situation of a bubble forming at the bottom of a liquid is
 preferred). The shape is very sensitive to the unknown interfacial
 tension. The drop profile is described by only one non-dimensional
 parameter (tip radius over capillary length), although in practice
-five dimensional parameters can be adjusted within this plug-in: tip
+five dimensional parameters can be adjusted within this Plugin: tip
 position and curvature, tilt of symetry axis and capillary length. The
 surface tension is calculated from the latter if the density
 difference is given.
 
-This plug-in allows interactive adjustment of a profile to an image of
+This Plugin allows interactive adjustment of a profile to an image of
 a pendant drop. An estimate of the quality of the fit is logged to
-ImageJ's log window. The plug-in can also be asked to improve the fit
+ImageJ's log window. The Plugin can also be asked to improve the fit
 by varying one or several of the parameters automatically (currently
 by successive minimisation along chosen directions according to
 Powell~\cite{Powell1965,Brandt1992}, see section~\ref{sec:numerics}).
 
-This plug-in can also be used to estimate the surface tension from the
+This Plugin can also be used to estimate the surface tension from the
 shape of a sessile drop.
 
 
 \section{Prerequisites}
 \label{sec:prerequisites}
 
-The plug-in is run on a high contrast image of a pendant drop
+The Plugin is run on a high contrast image of a pendant drop
 (Fig.~\ref{fig:usage}-left). Pixel values are expected to be close to
 zero within the drop, and close to saturation (i.e. 255 for 8-bit
 images) outside. This is typically obtained by taking the picture of
@@ -145,34 +145,67 @@ little bit of blurring on such images will improve the fitting
 performance.
 
 Draw a rectangular Region Of Interest (ROI) around the pendant drop
-before calling the plug-in (Fig.~\ref{fig:usage}-middle). The ROI
+before calling the Plugin (Fig.~\ref{fig:usage}-middle). The ROI
 should not include the inlet tube, but only the free surface of the
 drop. A few ten or so pixels margin around the drop should be
 sufficient. Including more of the outside region will not do harm, but
-slow down calculations which take a time proportional to the area of
-the ROI.
+will slightly slow down calculations.
 
 
-\section{Installing the plug-in}
+\section{Installing the Plugin}
 \label{sec:installation}
 
-As usual with ImageJ plug-ins, just put the jar into ImageJ's
-\texttt{plugins} folder or a subfolder thereof. Restart ImageJ to see
-the plug-in.
+\begin{description}
+\item[via the update site] The preferred method is to use
+  \href{http://fiji.sc/}{Fiji}'s \cite{FijiSite,Schindelin2012}
+  update mechanism. Detailed step-by-step instructions with
+  illustrations can be found at
+  \url{http://fiji.sc/How_to_follow_a_3rd_party_update_site}, in case
+  the following is too confusing or outdated.
+
+  In the \texttt{Help} menu, select \texttt{Update Fiji} to start the
+  updater. Choose the \texttt{Advanced mode}, click on \texttt{Manage
+    update sites} and add a site with the following URL:
+  \begin{center}
+    \url{http://sites.imagej.net/Daerr/}
+  \end{center}
+  (The name has no particular importance, choose something meaningfull
+  to you)
+
+  Enable this site (check the box next to it) and close the window to
+  get back to the main updater window. In the list of Plugins, locate
+  \texttt{plugins:Goutte\_pendante.jar} (to find it more easily you can
+  restrict the list to items from the new site using the menu above
+  the list), select it and mark it for installation. Apply changes,
+  restart Fiji: a new item \texttt{drop analysis} should have appeared
+  in the Plugins menu.
+
+\item[by downloading the jar file] For a manual installation, and as
+  usual with ImageJ Plugins, just put the jar into ImageJ's
+  \texttt{plugins} folder or a subfolder thereof. Restart ImageJ to
+  see the Plugin.
+
+\end{description}
 
 
-\section{Using the plug-in}
+\section{Using the Plugin}
 \label{sec:usage}
+
+The menu item \texttt{About Pendant drop...} will show a bit of
+information on the Plugin, including usage, the update site and an
+example image on which you can test the Plugin.
+
+The menu item \texttt{Pendant drop} launches the Plugin proper.
 
 \begin{figure}
   \centering
   \includegraphics[width=0.25\textwidth]{eauContrasteMax}\hfill
   \includegraphics[width=0.36\textwidth]{eauContrasteMaxInitial.png}\hfill
   \includegraphics[width=0.36\textwidth]{eauContrasteMaxFit2.png}
-  \caption{Plug-in usage. \textbf{(left)} starting image, high-pass
+  \caption{Plugin usage. \textbf{(left)} starting image, high-pass
     filtered and contrasted just short of saturating black and white
     levels. \textbf{(middle)} image with rectangular ROI selection and
-    initial guess next to plug-in dialog. \textbf{(right)} automatic
+    initial guess next to Plugin dialog. \textbf{(right)} automatic
     ajustment under way. The progress and decrease of the penalty
     value is documented in the Log-window in the lower right.}
   \label{fig:usage}
@@ -180,7 +213,7 @@ the plug-in.
 
 Fill in any parameter values you know, and check the plausibility of
 the initial guess for the others. If the image was calibrated for
-spatial scale, the corresponding scale is proposed by the plug-in (but
+spatial scale, the corresponding scale is proposed by the Plugin (but
 beware that ImageJ's dialogs round values to the number of digits
 shown, so double-check in case your pixel size is much smaller than
 unity) and all length scales are expressed in calibrated units. If the
@@ -195,7 +228,7 @@ theoretical profile and image. The adjustment penalty value shown in
 the dialog serves as a quantitative measure of the agreement: it
 should be made as small as possible.
 
-b) check those parameters that the plug-in may adjust and click on
+b) check those parameters that the Plugin may adjust and click on
 \texttt{fit} for automatic minimisation (Fig.~\ref{fig:usage}-right).
 Only the previously checked parameters are varied when trying to find
 an optimal shape. The overlay is updated accordingly. Note that the
@@ -206,7 +239,7 @@ profile looks satisfactory.
 To interrupt fitting at any time click once more on the \texttt{fit}
 button.
 
-Exit the plug-in by clicking on either OK or Cancel.
+Exit the Plugin by clicking on either OK or Cancel.
 
 \paragraph{How to get the surface tension}
 If the image was scale-calibrated, and a sensible value was entered
@@ -299,7 +332,7 @@ determined by the choice of the initial condition for $\psi'(0)$,
 which is just the ratio of the capillary length and the radius of
 curvature of the drop tip.
 
-\section{What the plug-in does internally}
+\section{What the Plugin does internally}
 \label{sec:numerics}
 
 \minisec{numérical integration}
@@ -362,25 +395,34 @@ function if they are indeed outside the contour, but add their full
 intensity value to $\mathcal{P}$ if they are inside~$\mathcal{C}$.
 
 \minisec{optimize by varying parameters and iterating} In case
-automated fitting of some parameters is requested, the plug-in tries
+automated fitting of some parameters is requested, the Plugin tries
 to minimise the penalty function by successively varying each free
 parameter, searching for each the value that will yield the
 best-fitting integrated drop contour. After all parameters have been
-varied, the plug-in checks whether it is not more efficient to
+varied, the Plugin checks whether it is not more efficient to
 minimise along another direction in parameter space, i.e.\ modify
 several parameters concurrently, and possibly updates the list of
 directions. The whole process is repeated until the change in the
 penalty value after a full round becomes too small. For more details
 see references~\cite{Powell1965,Brandt1992}.
 
-\thebibliography{2}
+\thebibliography{9}
 
 \bibitem{ImageJ} W. S. Rasband, \textit{ImageJ}, U. S. National
   Institutes of Health, Bethesda, Maryland, USA,
   \url{http://imagej.nih.gov/ij/}, 1997-2010.
+
+\bibitem{FijiSite} Fiji web site: \url{http://fiji.sc/}
+
+\bibitem{Schindelin2012} J. Schindelin \textit{et al.}, \textit{Fiji: an
+    open-source platform for biological-image analysis}, Nature
+  Methods 9(7), pp.676--682 (2012)
+
 \bibitem{Powell1965} M. J. D. Powell, \textit{Computer Journal}
   \textbf{7} (1965) 155
+
 \bibitem{Brandt1992} S. Brandt, \textit{Datenanalyse}, BI-Wiss.-Verlag
   (Mannheim, Leipzig, Wien, Zürich) 3rd edition, ISBN 3-411-03200-6
   (1992)
+
 \end{document}
