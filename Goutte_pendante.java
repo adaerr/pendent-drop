@@ -1440,11 +1440,11 @@ public class Goutte_pendante implements ExtendedPlugInFilter, Runnable,
         JPanel p = new JPanel();
         p.setLayout(new BoxLayout(p, BoxLayout.PAGE_AXIS));
         p.setBorder(BorderFactory.createLoweredBevelBorder());
+        p.setPreferredSize(new Dimension(800, 700));
 
         //Add small vertical space
         //p.add(Box.createRigidArea(new Dimension(0,5)));
         JScrollPane scrollPane = new JScrollPane();
-        scrollPane.setPreferredSize(new Dimension(800, 600));
         scrollPane.setAlignmentX(Component.LEFT_ALIGNMENT);
         p.add(scrollPane);
 
@@ -1612,30 +1612,26 @@ public class Goutte_pendante implements ExtendedPlugInFilter, Runnable,
     public java.util.Map<String,String> getDocumentation() {
         java.util.Map<String,String> doc = 
             new java.util.LinkedHashMap<String,String>();
-        doc.put("About", pluginMenuName+"\n\n"+
-                "Plug-in for liquid surface tension measurement.\n"+
-                "This plug-in allows interactive adjustment of a\n"+
-                "theoretical profile to an image of a pendant drop.\n"+
-                "An estimate of the quality of the fit is logged to\n"+
-                "ImageJ's log window. The plug-in can also be asked to\n"+
-                "improve the fit by varying one or several of the\n"+
-                "parameters automatically.");
+        doc.put("About", pluginMenuName+"is a Plugin"+
+                "for liquid surface tension measurement.\n"+
+    "This plug-in allows interactive adjustment of a theoretical profile\n"+
+    "to an image of a pendant drop. An estimate of the quality of the fit\n"+
+    "is logged to ImageJ's log window. The Plugin can also improve the fit\n"+
+    "automatically by varying one or several of the parameters.");
         doc.put("Usage", 
-                "Draw a rectangular ROI around the free pendant part of\n"+
-                "the drop, call plug-in, check 'preview' box;\n"+
-                "then adjust parameters interactively and/or fit selected\n"+
-                "parameters automatically.\n"+
-                "[For more details see PDF documentation below]");
+    "Draw a rectangular ROI around the free pendant part of the drop,\n"+
+    "call Plugin, check 'preview' box; then adjust parameters interactively\n"+
+    "and/or fit selected parameters automatically.\n"+
+    "[For more details see PDF documentation below]");
         doc.put("Author", "Adrian Daerr");
-        doc.put("Version", "2013-04-15");
+        doc.put("Version", "2013-06-06");
         doc.put("Licence", "GPL");
         doc.put("Author homepage URL",
                 "http://www.msc.univ-paris-diderot.fr/~daerr/");
         doc.put("Plugin update site URL",
-                "http://www.msc.univ-paris-diderot.fr/~daerr/fiji");
-        doc.put("detailed documentation PDF file", "Goutte_pendante.pdf");
-        //doc.put("doc B file",
-        //        getClass().getResource("Goutte_pendante.pdf").toString());
+                "http://sites.imagej.net/Daerr/");
+        doc.put("Detailed documentation PDF file", "Goutte_pendante.pdf");
+        doc.put("Example image: water drop, JPEG file", "eauContrasteMax.jpg");
         return doc;
     }
 
