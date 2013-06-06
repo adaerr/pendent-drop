@@ -604,6 +604,7 @@ public class Goutte_pendante implements ExtendedPlugInFilter, Runnable,
                                             fitparam[0]*fitparam[0]*param[5]);
                 //System.err.println("Q="+Q+" for capillary length = "+fitparam[0] +
                 //       ", surface tension = "+fitparam[0]*fitparam[0]*param[5]);
+                IJ.log("drop surface (non-dim):"+calcDropSurface(p));
 
                 dialog.previewRunning(false);
                 workerDoFit = false;// to prevent running fit again on
@@ -621,6 +622,34 @@ public class Goutte_pendante implements ExtendedPlugInFilter, Runnable,
         IJ.log("density contrast * gravitational acceleration (rho*g): "+param[5]+"\n");
         IJ.log("pixel size: "+param[6]+"\n");
         IJ.log("surface tension: "+param[0]*param[0]*param[5]+"\n");
+    }
+
+    double calcDropSurface(Path2D drop) {
+        final double flatness = 1e-5f; // should not have any effect
+                                        // as drop is a polygon
+        double oz, or, z, r; // initial and final points of segments
+        final float[] coords = new float[6]; // segment coordinates
+        double surface = 0;
+
+        PathIterator iter = drop.getPathIterator(null, flatness);
+        if (iter.isDone()) return 0; // should not happen: no drop points
+        iter.currentSegment(coords);
+        or = coords[0];
+        oz = coords[1];
+        iter.next();
+        while (!iter.isDone()) {
+            int type = iter.currentSegment(coords);
+            r = coords[0];
+            z = coords[1];
+            if (r<0 || type == PathIterator.SEG_CLOSE) {
+                break;
+            }
+            surface += Math.PI*(r+or)*Math.sqrt((r-or)*(r-or)+(z-oz)*(z-oz));
+            or = r;
+            oz = z;
+            iter.next();
+        }
+        return surface;
     }
 
     /** Notify waiting worker of work to do. */
