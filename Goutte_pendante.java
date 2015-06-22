@@ -194,6 +194,11 @@ public class Goutte_pendante implements ExtendedPlugInFilter, Runnable,
     Area roiArea;
     int roiHeightPix, roiWidthPix, roiNpixels;
 
+    double[] rightBorder = null;
+    double[] leftBorder = null;
+    int yDropTip;
+
+
     java.util.Map<JButton,URI> uris = 
         new java.util.LinkedHashMap<JButton,URI>();
 
@@ -221,7 +226,7 @@ public class Goutte_pendante implements ExtendedPlugInFilter, Runnable,
         this.imp = imp;
         ip = imp.getProcessor();
 
-        return DOES_8G | DOES_16 | DOES_32 | NO_CHANGES | ROI_REQUIRED |
+        return DOES_8G | DOES_16 | DOES_32 | ROI_REQUIRED | NO_CHANGES |
             KEEP_PREVIEW;
     }
 
@@ -534,6 +539,74 @@ public class Goutte_pendante implements ExtendedPlugInFilter, Runnable,
             param[5] = 1.0f;// don't bother
         else
             param[5] = 9.81f;
+
+        findDropBorders(imp.getProcessor());
+    }
+
+    /* Detect drop borders once for every image */
+    ImageProcessor alreadyDetectedIP = null;
+    void findDropBorders(ImageProcessor ip) {
+        final int voisinage = 10; // how many pixels left and right of border to inclue in fit
+        final float threshold = 128.f;
+        if (rightBorder == null) rightBorder = new double[roi.height];
+        if (leftBorder == null) leftBorder = new double[roi.height];
+        // Do nothing if detection was already done for this image
+        if (ip == alreadyDetectedIP) return;
+        // gather rough info on the drop
+        roi = imp.getRoi().getBounds();
+        int yStartBorders = -1;
+        for (int y=0; y < roi.height; y++) {
+            float centerXacc = 0;// accumulator for center of gravity along line
+            int count = 0;
+            int xl=-1, xr=-1;
+            for (int x=0; x<roi.width; x++) {
+                if (ip.getPixelValue(roi.x + x, roi.y + y) < threshold) {// inside drop
+                    count++;
+                    centerXacc += x;
+                    if (xl < 0) xl = x;
+                    xr = -1;
+                } else {// outside drop
+                    if (xr < 0 && xl >= 0) xr = x-1;
+                }
+            }
+
+            if (count > voisinage && xl - voisinage >= 0 && xr + voisinage < roi.width) {
+               double minValue = Double.MAX_VALUE, maxValue = Double.NEGATIVE_INFINITY;
+               for (int dx = -voisinage; dx < voisinage; dx++) {
+                       double v = ip.getPixelValue(roi.x + xl + dx, roi.y + y);
+                       if (v > maxValue) maxValue = v;
+                       if (v < minValue) minValue = v;
+               }
+               double acc = 0;
+               for (int dx = -voisinage; dx < voisinage; dx++) {
+                       acc += ip.getPixelValue(roi.x + xl + dx, roi.y + y) - minValue;
+               }
+               acc /= maxValue - minValue;
+               leftBorder[y] = xl - 0.5 - voisinage + acc;
+
+               acc = 0;
+               for (int dx = -voisinage+1; dx <= voisinage; dx++) {
+                       acc += ip.getPixelValue(roi.x + xr + dx, roi.y + y) - minValue;
+               }
+               acc /= maxValue - minValue;
+               rightBorder[y] = xr + 0.5 + voisinage - acc;
+
+               //IJ.log("y=" + y + ", xl=" + xl + ", xr=" + xr + ", count=" + count);
+               //IJ.log("right=" + rightBorder[y] + ", left=" + leftBorder[y] );
+               //ip.putPixelValue((int)rightBorder[y]+roi.x, roi.y+y, (y&1)==0 ? 255 : 0);
+               //ip.putPixelValue((int)leftBorder[y]+roi.x, roi.y+y, (y&1)==0 ? 255 : 0);
+               yDropTip = y;
+            } else {
+                leftBorder[y] = Float.NaN;
+                rightBorder[y] = Float.NaN;
+                if (count == 0) {// we reached the tip of the drop
+                  break;
+                }
+            }
+
+        }
+        // remember that we detected the borders for this image
+        alreadyDetectedIP = ip;
     }
 
     /** Entry point and loop of the worker thread which updates the contour
@@ -604,7 +677,7 @@ public class Goutte_pendante implements ExtendedPlugInFilter, Runnable,
                                             fitparam[0]*fitparam[0]*param[5]);
                 //System.err.println("Q="+Q+" for capillary length = "+fitparam[0] +
                 //       ", surface tension = "+fitparam[0]*fitparam[0]*param[5]);
-                IJ.log("drop surface (non-dim):"+calcDropSurface(p));
+                IJ.log("drop surface (non-dim):"+calcDropSurface(p)+"\n");
 
                 dialog.previewRunning(false);
                 workerDoFit = false;// to prevent running fit again on
@@ -673,6 +746,10 @@ public class Goutte_pendante implements ExtendedPlugInFilter, Runnable,
     /** Update drop contour. Called when preview is requested and any
      * parameter is modified. */
     public void run(ImageProcessor ip) {
+        // find drop borders for later
+        findDropBorders(ip);
+
+        // wake up worker thread
         workerDoFit = false;
         workToDo = true;
         notifyWorker();
@@ -688,7 +765,11 @@ public class Goutte_pendante implements ExtendedPlugInFilter, Runnable,
 
     /** Set given curve as overlay on image. */
     void showCurve(Shape c) {
-        if (c != null) imp.setOverlay(c, Color.red, null);
+        if (c == null) return;
+        //// translation by +(0.5,0.5)
+        //AffineTransform t = new AffineTransform(1, 0, 0, 1, 0.5, 0.5);
+        //imp.setOverlay(t.createTransformedShape(c), Color.red, null);
+        imp.setOverlay(c, Color.red, null);
     }
 
     /** Tells worker thread to quit. */
@@ -969,93 +1050,119 @@ public class Goutte_pendante implements ExtendedPlugInFilter, Runnable,
         final double backgroundVal = 255.;
         double Q = 0;
         for (int x = roi.x; x < roi.x+roi.width; x++) {
-            if (x < xl || x > xr)
+            if (x < xl || x > xr) // outside drop
                 Q += backgroundVal - ip.getPixelValue(x,y);
-            else
+            else // inside drop
                 Q += ip.getPixelValue(x,y);
         }
         return Q;
     }
 
     double fitQuality(Shape drop) {
-        double Q = 0;
-        int xleft,xright;
-        final int xmax = roi.y+roi.height;
-        xleft = xmax; // signals drop limits are yet unkown
-        xright = xmax; // signals drop limits are yet unkown
-        java.awt.geom.Rectangle2D bounds = drop.getBounds2D();
-        for (int y = roi.y; y < roi.y+roi.height; y++) {
-            if (y < bounds.getMinY() || y > bounds.getMaxY()) {
-                Q += getLineQuality(y, 1, 0); // whole line outside contour
-            } else { // potentially intersecting contour
-                // search for limits of drop contour
-                if (xleft >= xmax) {
-                    // exhaustive search for left/right drop bounds
-                    for (xleft = roi.x; xleft < xmax; xleft++)
-                        if (drop.contains(xleft,y)) break;
-                    for (xright = xleft+1; xright < xmax; xright++)
-                        if (!drop.contains(xleft,y)) break;
-                    xright--;
-                    // xleft and xright are now the first and last integer
-                    // coordinates contained in the drop contour
-                    // (if no point is inside the drop contour,
-                    // xleft = xmax and xright = xmax-1)
-                } else {// use previous bounds as initial guesses
-                    // left bound
-                    if (drop.contains(xleft,y)) {// search to left
-                        do xleft--;
-                        while (xleft >= roi.x && drop.contains(xleft,y));
-                        xleft++;
-                        // assert( drop.contains(xleft,y) && xleft >= roi.x )
-                    } else {// search to right
-                        final int xstart = xleft;
-                        do xleft++;
-                        while (xleft < xmax && !drop.contains(xleft,y));
-                        if (xleft >= xmax) { // nothing found, search remainder
-                            for (xleft = roi.x; xleft < xstart;
-                                 xleft++)
-                                if (drop.contains(xleft,y)) break;
-                            if (xleft >= xstart) xleft = xmax; // nothing found
-                        }
-                    }
-                    // assert ( xleft >= xstart || drop.contains(xleft,y) )
-                    // right bound
-                    if (xleft < xmax) {
-                        xright = Math.max(xleft, xright);
-                        if (drop.contains(xright,y)) {// search to right
-                            do xright++;
-                            while (xright < xmax && drop.contains(xright,y));
-                            xright--;
-                        } else {// search to left
-                            do xright--;
-                            while (xright >= roi.x && !drop.contains(xright,y));
-                        }
-                    }
-                    // assert ( xleft >= xstart || drop.contains(xright,y) )
+        double[] leftIntersect = new double[roi.height];
+        double[] rightIntersect = new double[roi.height];
+        for (int y = 0; y < roi.height; y++) {
+            leftIntersect[y] = Double.NaN;
+            rightIntersect[y] = Double.NaN;
+        }
+        // follow the contour and note intersection point for every line
+        PathIterator pi = drop.getPathIterator(null);
+        if (pi.isDone()) return Double.POSITIVE_INFINITY;
+        double[] coord = new double[6];
+        double xo, yo, xn, yn;
+        int segType, yof, ynf;
+        segType = pi.currentSegment(coord);
+        //IJ.log("first segment type " + segType);
+        //IJ.log("CLOSE == " + PathIterator.SEG_CLOSE);
+        //IJ.log("MOVETO == " + PathIterator.SEG_MOVETO);
+        //IJ.log("LINETO == " + PathIterator.SEG_LINETO);
+        //IJ.log("CUBICTO == " + PathIterator.SEG_CUBICTO);
+        //IJ.log("QUADTO == " + PathIterator.SEG_QUADTO);
+        xo = coord[0] - roi.x;
+        yo = coord[1] - roi.y;
+        yof = (int)Math.floor(yo);
+        //IJ.log("first point (" + xo + ", " + yo + "), roi.y = " + roi.y);
+        leftIntersect[(int)yo] = xo;
+
+        pi.next();
+
+        while (!pi.isDone()) {
+            segType = pi.currentSegment(coord);
+            if (segType != PathIterator.SEG_LINETO) {
+                pi.next();
+                continue;
+            }
+            xn = coord[0] - roi.x;
+            yn = coord[1] - roi.y;
+            // find out if this segment crossed a horizontal
+            //line of integer coordinate
+            ynf = (int)Math.floor(yn);
+            if (ynf != yof) {// integer bound crossed !
+                int ymin = Math.max(0, Math.min(ynf, yof) + 1);
+                int ymax = Math.min(roi.height - 1, Math.max(ynf, yof));
+                for (int yi = ymin; yi <= ymax; yi++) {
+                double frac = (yi - yo) / (yn - yo);
+                double xi = xo + frac * (xn - xo);
+                //IJ.log("on coupe " + yi + " pour frac = "+frac+", en x = " + xi);
+                if (ynf > yof) // left side
+                  leftIntersect[yi] = xi;
+                else
+                  rightIntersect[yi] = xi;
                 }
-                Q += getLineQuality(y, xleft, xright);
+            }
+            //IJ.log("lineto (" + xn + ", " + yn + ", " + ynf + ")");
+            xo = xn;
+            yo = yn;
+            yof = ynf;
+            pi.next();
+        }
+        rightIntersect[(int)yo] = xo;
+
+        // add values where there is no contour
+        double dummyIntersect = roi.width/2;
+        for (int y=0; y < roi.height; y++) {
+            if (Double.isNaN(leftIntersect[y]) || Double.isNaN(rightIntersect[y])) {
+                if (Double.isNaN(leftIntersect[y]))
+                    leftIntersect[y] = dummyIntersect;
+                if (Double.isNaN(rightIntersect[y]))
+                    rightIntersect[y] = dummyIntersect;
+            } else {
+                dummyIntersect = 0.5*(leftIntersect[y] + rightIntersect[y]);
+            }
+            //IJ.log("y = " + y + ": left = " + leftIntersect[y] + ", right = " + rightIntersect[y]);
+        }
+
+        // calculate penalty by summing over the distances between the measured
+        // and the theoretical border position.
+        double Q = 0;
+        double xml = 0;
+        double xtl = 0;
+        double xmr = 0;
+        double xtr = 0;
+        for (int y = 0; y < yDropTip; y++){
+          if (!Double.isNaN (leftBorder[y])){
+              xml = leftBorder[y];
+            if (!Double.isNaN (leftIntersect[y])){
+                xtl = leftIntersect[y];
+            } else {
+                xtl = roi.width/2;
+            }
+            Q += (xml - xtl)*(xml - xtl); //alternative: Math.abs(xml - xtl);
+           }
+
+        if (!Double.isNaN(rightBorder[y])){
+              xmr = rightBorder[y];
+              if (!Double.isNaN(rightIntersect[y])){
+                  xtr = rightIntersect[y];
+              } else {
+                  xtr = roi.width/2;
+              }
+            Q += (xmr - xtr)*(xmr - xtr); //alternative: Math.abs(xmr - xtr);
             }
         }
         return Q;
     }
-    /* old straight forward variant, was bottleneck of calculation
-     * (Shape.contains() seems quite expensive) */
-    //double fitQuality(Shape drop) {
-    //    final double backgroundVal = 255.;
-    //    double Q = 0;
-    //    for (int y = roi.y; y < roi.y+roi.height; y++) {
-    //        double Qtmp = 0;
-    //        for (int x = roi.x; x < roi.x+roi.width; x++) {
-    //            if (drop.contains(x,y))
-    //                Qtmp += ip.getPixelValue(x,y);
-    //            else
-    //                Qtmp += backgroundVal - ip.getPixelValue(x,y);
-    //        }
-    //        Q += Qtmp;
-    //    }
-    //    //Q += drop.getBounds2D().getWidth()/roi.width;
-    //    return Q;
-    //}
+
 
     private class ParameterSpacePoint {
         double[] x;
@@ -1069,10 +1176,13 @@ public class Goutte_pendante implements ExtendedPlugInFilter, Runnable,
     final Function calcMatchVal = new Function() {
             public double function(double[] x) {
                 Path2D p=null;
+                // never try to calculate profile for negative lengths
+                if (x[0] < 0 || x[3] <= 0) return Double.POSITIVE_INFINITY;
                 try {
                     p = calculateProfile(x[3]/x[0],
                                          roiHeightPix*param[6]/x[0]);
                 } catch (Exception e) {
+                    e.printStackTrace();
                     System.err.println("roiHeightPix="+roiHeightPix+
                                        ", param[6]="+param[6]+", x[0]="+x[0]);
                 }
