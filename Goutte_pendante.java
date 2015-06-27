@@ -131,7 +131,7 @@ import javax.swing.BorderFactory;
 
 
 public class Goutte_pendante implements ExtendedPlugInFilter, Runnable,
-                                        PlugInDoc, ActionListener {
+                                        ActionListener {
 
     /* dialog parameters and fit parameters:
      * param[0] ... capillary length
