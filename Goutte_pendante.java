@@ -604,9 +604,15 @@ public class Goutte_pendante implements ExtendedPlugInFilter, Runnable,
                 //ip.putPixelValue((int)rightBorder[y]+roi.x, roi.y+y, (y&1)==0 ? 255 : 0);
                 //ip.putPixelValue((int)leftBorder[y]+roi.x, roi.y+y, (y&1)==0 ? 255 : 0);
                 yDropTip = y;
-            } else {
-                leftBorder[y] = Float.NaN;
-                rightBorder[y] = Float.NaN;
+            } else {// cannot fit
+                if (xl > 0)
+                    leftBorder[y] = xl - 0.5;
+                else
+                    leftBorder[y] = Float.NaN;
+                if (xr > 0)
+                    rightBorder[y] = xr - 0.5;
+                else
+                    rightBorder[y] = Float.NaN;
                 if (count == 0) {// we reached the tip of the drop
                     break;
                 }
@@ -673,7 +679,7 @@ public class Goutte_pendante implements ExtendedPlugInFilter, Runnable,
 
                 // calculate the drop profile and draw
                 Path2D p = calculateProfile(fitparam[3]/fitparam[0],
-                                            roiHeightPix*param[6]/fitparam[0]);
+                                            1.5*roiHeightPix*param[6]/fitparam[0]);
                 Shape s = dropToScreen(p, fitparam[0]/param[6], fitparam[1]/param[6],
                                        fitparam[2]/param[6], fitparam[4]);
                 showCurve(s);
@@ -774,10 +780,9 @@ public class Goutte_pendante implements ExtendedPlugInFilter, Runnable,
     /** Set given curve as overlay on image. */
     void showCurve(Shape c) {
         if (c == null) return;
-        //// translation by +(0.5,0.5)
-        //AffineTransform t = new AffineTransform(1, 0, 0, 1, 0.5, 0.5);
+        // translation by +(0.5,0.5)
+        AffineTransform t = new AffineTransform(1, 0, 0, 1, 0.5, 0.5);
         //imp.setOverlay(t.createTransformedShape(c), Color.red, null);
-        //imp.setOverlay(c, Color.red, null);
         Path2D.Float border = new Path2D.Float();
         border.moveTo(roi.x + leftBorder[0], roi.y + 0);
         for (int y = 0; y < leftBorder.length; y++) {
@@ -788,13 +793,13 @@ public class Goutte_pendante implements ExtendedPlugInFilter, Runnable,
         }
         border.closePath();
 
-		ij.gui.Roi roi = new ij.gui.ShapeRoi(new Area(border));
-		roi.setStrokeColor(Color.blue);
-		ij.gui.Overlay o = new ij.gui.Overlay(roi);
+		ij.gui.Roi r = new ij.gui.ShapeRoi(t.createTransformedShape(new Area(border)));
+		r.setStrokeColor(Color.blue);
+		ij.gui.Overlay o = new ij.gui.Overlay(r);
 
-		roi = new ij.gui.ShapeRoi(c);
-		roi.setStrokeColor(Color.red);
-		o.add(roi);
+		r = new ij.gui.ShapeRoi(t.createTransformedShape(c));
+		r.setStrokeColor(Color.red);
+		o.add(r);
 		
 		//roi.setStroke(stroke);
 		imp.setOverlay(o);
@@ -964,10 +969,21 @@ public class Goutte_pendante implements ExtendedPlugInFilter, Runnable,
             deriv(tmp,k3);
             for (int i=0; i<nVar; i++) tmp[i] = etat[i] + ds*k3[i];
             deriv(tmp,k4);
+            boolean thinning = 2*etat[1] > Math.PI;
             for (int i=0; i<nVar; i++)
                 etat[i] = etat[i] + ds*(k1[i]+2*k2[i]+2*k3[i]+k4[i])/6;
-            if (k4[3] < 0) break; // abort if profile bends back downwards
+             // abort if profile becomes non-physical:
+            if (  (k4[3] < 0) // bends back downwards
+               || ((etat[2] < 0) && thinning && (2*etat[1] < Math.PI))  ) {// has neck
+                break;
+            }
             profile.add(new Point2D.Float((float)etat[0],(float)etat[3]));
+            //IJ.log(""+etat[0]+"\t"+etat[1]+"\t"+etat[2]+"\t"+etat[3]);
+        }
+        // if integration was aborted, complete profile
+        while (etat[3] < zMax) {
+            etat[3] += ds;
+            profile.add(new Point2D.Float((float)ds, (float)etat[3]));
         }
         //System.err.println("r="+etat[0]);
         //System.err.println("z="+etat[3]);
