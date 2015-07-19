@@ -70,11 +70,6 @@
  * [See more detailed description in included PDF documentation]
  */
 
-// todo
-// -be smarter about evaluating adjustment penalty: sum only over
-//    vicinity of contour
-// -help: about; point to pdf
-
 import ij.ImagePlus;
 import ij.IJ;
 import ij.process.ImageProcessor;
@@ -83,6 +78,7 @@ import ij.process.ByteProcessor;
 import ij.plugin.filter.ExtendedPlugInFilter;
 import ij.plugin.filter.PlugInFilterRunner;
 import ij.gui.GenericDialog;
+import ij.gui.DialogListener;
 import ij.measure.Calibration;
 import java.awt.Color;
 import java.awt.Panel;
@@ -108,6 +104,7 @@ import java.util.Vector;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
+import java.util.HashMap;
 
 import java.net.URI;
 import java.net.URL;
@@ -130,81 +127,68 @@ import javax.swing.BoxLayout;
 import javax.swing.BorderFactory;
 
 
-public class Goutte_pendante implements ExtendedPlugInFilter, Runnable,
-                                        ActionListener {
+public class Goutte_pendante implements ExtendedPlugInFilter,
+                                        ActionListener, DialogListener {
 
     /* dialog parameters and fit parameters:
-     * param[0] ... capillary length
-     * param[1] ... tip x coordinate
-     * param[2] ... tip y coordinate
-     * param[3] ... tip radius of curvature
-     * param[4] ... deviation of gravity from vertical in degrees
-     * param[5] ... density contrast times gravitational acceleration (rho*g)
-     * param[6] ... length scale (pixel size)
+     * dialogParam[0] ... capillary length
+     * dialogParam[1] ... tip x coordinate
+     * dialogParam[2] ... tip y coordinate
+     * dialogParam[3] ... tip radius of curvature
+     * dialogParam[4] ... deviation of gravity from vertical in degrees
+     * dialogParam[5] ... density contrast times gravitational acceleration (rho*g)
+     * dialogParam[6] ... length scale (pixel size)
      *
-     * all lengths in param[] are in calibrated units, if any,
-     * otherwise in pixels (in which case param[6] == 1)
+     * all lengths in dialogParam[] are in calibrated units, if any,
+     * otherwise in pixels (in which case dialogParam[6] == 1)
      *
-     * fitparam[0] ... capillary length
-     * fitparam[1] ... tip x coordinate
-     * fitparam[2] ... tip y coordinate
-     * fitparam[3] ... tip radius curvature
-     * fitparam[4] ... gravity angle plus PI (radians)
+     * fitParam[0] ... capillary length
+     * fitParam[1] ... tip x coordinate
+     * fitParam[2] ... tip y coordinate
+     * fitParam[3] ... tip radius curvature
+     * fitParam[4] ... gravity angle plus PI (radians)
      *
-     * all lengths in fitparam[] have the same units as in param[];
+     * all lengths in fitParam[] have the same units as in dialogParam[];
      * the angle is in radians and has 2*PI added to be O(1).
      */
-    final static String[] names = { "capillary length",
+    private final static String[] dialogNames = { "capillary length",
                                     "tip_x coordinate",
                                     "tip_y coordinate",
                                     "tip_radius of curvature",
                                     "gravity angle (deg)",
                                     "density contrast times g",
                                     "scale (pixel size)" };
-    final static int Nparam = names.length;
-    float[] param = new float[Nparam];
-    final static String[] fitnames = { "capillary length",
+    private final static int NdialogParam = dialogNames.length;
+    //@GuardedBy dialog
+    private double[] dialogParam = new double[NdialogParam];
+    private final static String[] fitNames = { "capillary length",
                                        "tip_x coordinate",
                                        "tip_y coordinate",
                                        "tip_radius of curvature",
                                        "gravity angle" };
-    final static int Nfitparam = fitnames.length;
-    double[] fitparam = new double[Nfitparam];
-    boolean[] fitMe = new boolean[Nfitparam];
+    private final static int NfitParam = fitNames.length;
+    private boolean[] fitMe = new boolean[NfitParam];
+    
+    private final static String pluginMenuName = "Pendant drop";
 
-    final static String pluginMenuName = "Pendant drop";
+    private ImagePlus imp;
 
-    ImagePlus imp;
-    ImageProcessor ip;
+    private GenericDialog dialog;
+    private Button fitButton;
+    private final static String surfaceTensionString = "Surface tension: ";
+    private java.awt.Label surfaceTensionLabel;
+    private final static String adjustmentPenaltyString = "Fit penalty: ";
+    private java.awt.Label adjustmentPenaltyLabel;
 
-    GenericDialog dialog;
-    boolean parseError; // error reading the dialog's numeric fields
-    final static String surfaceTensionString = "Surface tension: ";
-    java.awt.Label surfaceTensionLabel;
-    final static String adjustmentPenaltyString = "Adjustment penalty: ";
-    java.awt.Label adjustmentPenaltyLabel;
-
-    Thread workerThread;
-    volatile boolean workerDoFit;
-    volatile boolean workToDo;
-    volatile boolean workerInterrupt;
-    volatile boolean workerRetire;// quit workerThread when true
-
-    Rectangle roi;
-    Area roiArea;
-    int roiHeightPix, roiWidthPix, roiNpixels;
-
-    double[] rightBorder = null;
-    double[] leftBorder = null;
-    int yDropTip;
-
-
-    java.util.Map<JButton,URI> uris = 
+    // for the 'about' box
+    private final java.util.Map<JButton,URI> uris = 
         new java.util.LinkedHashMap<JButton,URI>();
 
-    /** Plug-in starts here. Just does basic tests.
+    
+    /** Plug-in starts here, and ends here. At the beginning, just
+     * does basic tests. At the end, prints results into a table.
      *
-     * @see ij.plugin.PlugInFilter interface description.
+     * @see ij.plugin.ExtendedPlugInFilter interface description.
      */
     public int setup(String arg,
                      ImagePlus imp) {
@@ -212,6 +196,16 @@ public class Goutte_pendante implements ExtendedPlugInFilter, Runnable,
         if (arg.equals("about")) {
             showAbout();
             return DONE;
+        } else if (arg.equals("final")) {
+            IJ.log("__Drop shape summary__");
+            IJ.log("capillary length: "+dialogParam[0]);
+            IJ.log("tip x coordinate: "+dialogParam[1]);
+            IJ.log("tip y coordinate: "+dialogParam[2]);
+            IJ.log("tip radius of curvature: "+dialogParam[3]);
+            IJ.log("deviation gravity from vertical (deg): "+dialogParam[4]);
+            IJ.log("density contrast * grav. accel. (rho*g): "+dialogParam[5]);
+            IJ.log("pixel size: "+dialogParam[6]+"\n");
+            IJ.log("surface tension: "+dialogParam[0]*dialogParam[0]*dialogParam[5]);
         }
 
         if (IJ.versionLessThan("1.43u")) {
@@ -224,15 +218,12 @@ public class Goutte_pendante implements ExtendedPlugInFilter, Runnable,
             return DONE;
         }
         this.imp = imp;
-        ip = imp.getProcessor();
 
-        return DOES_8G | DOES_16 | DOES_32 | ROI_REQUIRED | NO_CHANGES |
-            KEEP_PREVIEW;
+        return DOES_8G | DOES_16 | DOES_32 | ROI_REQUIRED |
+            PARALLELIZE_STACKS | FINAL_PROCESSING;
     }
 
-    /** Main thread continues and ends here. Called after setup(), and
-     * terminates the plug-in: everything happens interactively while
-     * the dialog is shown.
+    /** Called after setup().
      *
      * @see ij.plugin.ExtendedPlugInFilter interface description.
      */
@@ -240,54 +231,152 @@ public class Goutte_pendante implements ExtendedPlugInFilter, Runnable,
                           String command,
                           PlugInFilterRunner pfr) {
 
-        estimateParameters();
+        // Estimate reasonable parameters from the current image
+        estimateParameters(imp.getProcessor());
 
         dialog = new GenericDialog(command);
-        for (int n=0; n < Nparam; n++) {
-            dialog.addNumericField(names[n], param[n], 8);
+	setDialogActive(true);
+        dialog.addDialogListener(this);
+        for (int n=0; n < NdialogParam; n++) {
+            dialog.addNumericField(dialogNames[n], dialogParam[n], 8);
         }
         dialog.addMessage(surfaceTensionString + "<no value>");
         surfaceTensionLabel = (java.awt.Label)dialog.getMessage();
         dialog.addMessage(adjustmentPenaltyString + "<no value>");
         adjustmentPenaltyLabel = (java.awt.Label)dialog.getMessage();
         dialog.addMessage("Fit the following parameters:");
-        dialog.addCheckboxGroup(Nfitparam, 1, fitnames, fitMe);
+        dialog.addCheckboxGroup(NfitParam, 1, fitNames, fitMe);
         Panel panel = new Panel();
-        Button button = new Button("Fit now");
-        button.addActionListener(new ActionListener() {
+        fitButton = new Button("Fit now");
+        fitButton.addActionListener(new ActionListener() {
                 public void actionPerformed(ActionEvent e) {
-                    doFit();
+                    fitButtonPressed();
                 }
             });
-        panel.add(button);
+        panel.add(fitButton);
         dialog.addPanel(panel);
         dialog.addPreviewCheckbox(pfr);
-
-        workerThread = new Thread(this);
-        workerThread.setName(pluginMenuName+" calculating thread");
-        workerRetire = false;
-        workerDoFit = false;
-        workToDo = true;
-        workerThread.start();
+        dialog.getPreviewCheckbox().setState(true);
 
         dialog.showDialog();
-        //if (dialog.wasCanceled()) return DONE;
+	setDialogActive(false);
 
-        exitWorkerThread();
-        //workerThread.join();
+        if (dialog.wasCanceled()) return DONE;
 
-        return DONE;
+        return DOES_8G | DOES_16 | DOES_32 | ROI_REQUIRED |
+            PARALLELIZE_STACKS | FINAL_PROCESSING;
     }
 
-    private class Polynome {
-        float[] coeff;
+    /** run() should behave differently according to whether it is run
+     * to obtain a preview, or for the final image, so we provide a
+     * flag that tells the context of the call
+     */
+    private boolean dialogActive;
+    synchronized void setDialogActive(boolean status) {
+        dialogActive = status;
+    }
+    synchronized boolean isDialogActive() {
+        return dialogActive;
+    }
 
-        Polynome(float coeff[]) {
+    /** Checks the validity of the parameters every time the dialog is
+     * modified, and copies them to the dialogParam array. The return
+     * value determines whether a potential preview calculation may be
+     * triggered or not.
+     *
+     * @param e The event that has been generated by the user action
+     * in the dialog. Note that e is null if the dialogItemChanged
+     * method is called after the user has pressed the OK button or if
+     * the GenericDialog has read its parameters from a macro.
+     *
+     * @return True if the dialog input is valid. False
+     * disables the OK button and preview (if any).
+     *
+     * @see ij.gui.DialogListener interface
+     */
+    public boolean dialogItemChanged(GenericDialog gd, java.awt.AWTEvent e) {
+        boolean change = false;
+        boolean haveFreeParam = false;
+
+        synchronized (dialog) {
+            for (int n=0; n < NdialogParam; n++) {
+                double val = gd.getNextNumber();
+                if (Double.isNaN(val)) return false;
+                // lengths and scale must be positive
+                if ((n < 4 || n == 6) && val <= 0) return false;
+                if (val != dialogParam[n]) change |= true;
+                dialogParam[n] = val;
+            }
+
+            for (int n=0; n < NfitParam; n++) {
+                fitMe[n] = gd.getNextBoolean();
+                haveFreeParam |= fitMe[n];
+            }
+   
+        }
+        if (!haveFreeParam) {
+            fitButton.setEnabled(false);
+            return false;
+        } else {
+            fitButton.setEnabled(true);
+        }
+        
+        return change;
+    }
+
+
+    /** Set fit parameters from dialog values. */
+    void setDropFromDialog(DropInfo di) {
+        double[] p = di.getFitParam();
+        synchronized (dialog) {
+            // set fit parameters from dialog params
+            p[0] = dialogParam[0];
+            p[1] = dialogParam[1];
+            p[2] = dialogParam[2];
+            p[3] = dialogParam[3];
+            p[4] = (dialogParam[4]/180+2)*Math.PI;
+            di.setDensityGrav(dialogParam[5]);
+            di.setPixelScale(dialogParam[6]);
+        }
+    }
+    
+    
+    /** Set dialog parameters from fitted values. */
+    @SuppressWarnings("unchecked")
+    void setDialogFromDrop(DropInfo di) {
+        double[] p = di.getFitParam();
+        synchronized (dialog) {
+            // set dialog parameters from fit parameters
+            dialogParam[0] = p[0];
+            dialogParam[1] = p[1];
+            dialogParam[2] = p[2];
+            dialogParam[3] = p[3];
+            dialogParam[4] = ((p[4]/Math.PI-2)*180);
+            //dialogParam[5] = di.getDensityGrav();
+            //dialogParam[6] = di.getPixelScale();
+
+            Vector<TextField> nf = (Vector<TextField>)dialog.getNumericFields();
+            for (int n=0; n < NdialogParam; n++) {
+                nf.elementAt(n).setText(Double.toString(dialogParam[n]));
+            }
+
+            adjustmentPenaltyLabel.setText(adjustmentPenaltyString + di.getQuality());
+            surfaceTensionLabel.setText(surfaceTensionString +
+                                        p[0]*p[0]*dialogParam[5]);
+
+        }
+    }
+
+    
+    private class Polynome {
+        double[] coeff;
+
+        Polynome(double coeff[]) {
             this.coeff = coeff;
         }
 
-        float getValueAt(float x) {
-            float xp = 1, y = 0;
+        double getValueAt(double x) {
+            double xp = 1, y = 0;
             for (int i=0; i<coeff.length; i++) {
                 y += coeff[i]*xp;
                 xp *= x;
@@ -295,7 +384,7 @@ public class Goutte_pendante implements ExtendedPlugInFilter, Runnable,
             return y;
         }
 
-        float getCoeff(int i) {
+        double getCoeff(int i) {
             return coeff[i];
         }
 
@@ -309,13 +398,13 @@ public class Goutte_pendante implements ExtendedPlugInFilter, Runnable,
      *
      * @throws IllegalArgumentException if input arrays have different lengths
      */
-    Polynome linearFit(float[] x, float[] y) {
+    Polynome linearFit(double[] x, double[] y) {
         if (x.length != y.length)
             throw new IllegalArgumentException("linearFit: input arrays of different length ("+x.length+" != "+y.length+")");
-        float xi1 = 0, xi2 = 0, zeta0 = 0, zeta1 = 0;
+        double xi1 = 0, xi2 = 0, zeta0 = 0, zeta1 = 0;
         int N = 0;
         for (int i=0; i<x.length; i++) {
-            if (!Float.isNaN(x[i]) && !Float.isNaN(y[i])) {
+            if (!Double.isNaN(x[i]) && !Double.isNaN(y[i])) {
                 xi1 += x[i];
                 xi2 += x[i]*x[i];
                 zeta0 += y[i];
@@ -323,21 +412,16 @@ public class Goutte_pendante implements ExtendedPlugInFilter, Runnable,
                 N++;
             }
         }
-        float det = xi1*xi1 - N*xi2;
+        double det = xi1*xi1 - N*xi2;
         if (det == 0) {
             IJ.log("linear fit failed because of nil determinant for points:\n"
                    +Arrays.toString(x)+"\n"+Arrays.toString(y));
             return null;
         }
-        float[] coeff = new float[2];
+        double[] coeff = new double[2];
         coeff[0] = (-xi2*zeta0 + xi1*zeta1)/det;
         coeff[1] = (xi1*zeta0 - N*zeta1)/det;
-        //IJ.log(""+xi1+", "+xi2+", "+zeta0+", "+zeta1+", "+det);
-        //IJ.log("linear fit for:");
-        //for (int i=0; i<x.length; i++) {
-        //    IJ.log(""+x[i]+" "+y[i]);
-        //}
-        //IJ.log("has coefficients "+Arrays.toString(coeff));
+
         return new Polynome(coeff);
     }
 
@@ -346,14 +430,14 @@ public class Goutte_pendante implements ExtendedPlugInFilter, Runnable,
      *
      * @throws IllegalArgumentException if input arrays have different lengths
      */
-    Polynome quadraticFit(float[] x, float[] y) {
+    Polynome quadraticFit(double[] x, double[] y) {
         if (x.length != y.length)
             throw new IllegalArgumentException("quadraticFit: input arrays of different length ("+x.length+" != "+y.length+")");
         double xi1 = 0, xi2 = 0, xi3 = 0, xi4 = 0;
         double zeta0 = 0, zeta1 = 0, zeta2 = 0;
         int N = 0;
         for (int i=0; i<x.length; i++) {
-            if (!Float.isNaN(x[i]) && !Float.isNaN(y[i])) {
+            if (!Double.isNaN(x[i]) && !Double.isNaN(y[i])) {
                 xi1 += x[i];
                 xi2 += x[i]*x[i];
                 xi3 += x[i]*x[i]*x[i];
@@ -375,44 +459,33 @@ public class Goutte_pendante implements ExtendedPlugInFilter, Runnable,
                    +Arrays.toString(x)+"\n"+Arrays.toString(y));
             return null;
         }
-        float[] coeff = new float[3];
-        coeff[2] = (float)((m12*z1 + m22*z2)/det);
-        coeff[1] = (float)((m11*z1 + m12*z2)/det);
-        coeff[0] = (float)((zeta0 - xi1*coeff[1] - xi2*coeff[2])/N);
-
-        //IJ.log(""+xi1+", "+xi2+", "+xi3+", "+xi4);
-        //IJ.log(""+zeta0+", "+zeta1+", "+zeta2);
-        //IJ.log("quadratic fit for:");
-        //for (int i=0; i<x.length; i++) {
-        //    IJ.log(""+x[i]+" "+y[i]);
-        //}
-        //IJ.log("has coefficients "+Arrays.toString(coeff));
+        double[] coeff = new double[3];
+        coeff[2] = (double)((m12*z1 + m22*z2)/det);
+        coeff[1] = (double)((m11*z1 + m12*z2)/det);
+        coeff[0] = (double)((zeta0 - xi1*coeff[1] - xi2*coeff[2])/N);
 
         return new Polynome(coeff);
     }
 
     /** Try to guess sensible initial values for the parameters. */
-    void estimateParameters() {
+    void estimateParameters(ImageProcessor ip) {
         // pixel size: get from image if set
         Calibration cal = imp.getCalibration();
         if (cal.scaled())
-            param[6] = (float)cal.pixelWidth;
+            dialogParam[6] = (double)cal.pixelWidth;
         else
-            param[6] = 1;
+            dialogParam[6] = 1;
 
         // gather rough info on the drop
-        roi = imp.getRoi().getBounds();
-        roiArea = new Area(roi);
-        roiHeightPix = roi.height;
-        roiNpixels = roi.height * roi.width;
-        final float threshold = 128.f;
+        Rectangle roi = ip.getRoi().getBounds();
+        final double threshold = 128.f;
         int tip=0;
-        float[] centerX = new float[roi.height];
-        float[] centerY = new float[roi.height];
-        float[] halfWidth = new float[roi.height];
+        double[] centerX = new double[roi.height];
+        double[] centerY = new double[roi.height];
+        double[] halfWidth = new double[roi.height];
         for (int y=0; y < roi.height; y++) {// y increases upwards in ROI
             centerY[y] = roi.y + roi.height - 1 - y;
-            float centerXacc = 0;// accumulator for center of gravity along line
+            double centerXacc = 0;// accumulator for center of gravity along line
             int count = 0;
             for (int x=0; x<roi.width; x++) {
                 if (ip.getPixelValue(roi.x + x,
@@ -427,54 +500,39 @@ public class Goutte_pendante implements ExtendedPlugInFilter, Runnable,
                     tip = y;
                 halfWidth[y] = 0.5f*count;
             } else {
-                centerX[y] = Float.NaN;
-                halfWidth[y] = Float.NaN;
+                centerX[y] = Double.NaN;
+                halfWidth[y] = Double.NaN;
             }
         }
-        //List<Float> centerXlist = Arrays.asList(centerX);
-        //List<float> halfWidthList = Arrays.asList(halfWidth);
-
-        //for (int y=0; y < roi.height; y++) {
-        //    if (!Float.isNaN(centerX[y]))
-        //        ip.putPixel((int)centerX[y],(int)centerY[y],255);
-        //}
 
         // tip curvature: linear fit to halfWidth near tip
         final int tipNeighbourhood = 5;// fit on these many points
-        float[] radiusSquare = new float[tipNeighbourhood];
+        double[] radiusSquare = new double[tipNeighbourhood];
         for (int i=0; i<tipNeighbourhood; i++) {
             radiusSquare[i] = halfWidth[tip+i]*halfWidth[tip+i];
         }
         Polynome tipFit = linearFit(Arrays.copyOfRange(centerY, tip,
                                                        tip+tipNeighbourhood),
                                     radiusSquare);
-        param[3] = Math.abs(tipFit.getCoeff(1))/2*param[6];
+        dialogParam[3] = Math.abs(tipFit.getCoeff(1))/2*dialogParam[6];
 
         // direction of gravity: tilt of center line
-        // fitting either to beginning or whole line does not work too well
-        //final int gravPoints = 5;// fit on these many points near
-        //// upper edge of ROI
-        //final int to = centerY.length;
-        //final int from = to - gravPoints;
-        //Polynome axisFit = linearFit(Arrays.copyOfRange(centerY, from, to),
-        //                             Arrays.copyOfRange(centerX, from, to));
-        //final double tiltAngleRad = -Math.atan(axisFit.getCoeff(1));
         //
         // link middle of top line to estimated center of drop
         // (one radius above tip)
-        final float axisX = centerX[roiHeightPix-1] - centerX[tip];
-        final float axisY = centerY[roiHeightPix-1] - centerY[tip]
-            + param[3]/param[6];
+        final double axisX = centerX[roi.height-1] - centerX[tip];
+        final double axisY = centerY[roi.height-1] - centerY[tip]
+            + dialogParam[3]/dialogParam[6];
         final double tiltAngleRad = Math.atan2(axisX,-axisY);
-        param[4] = (float)(tiltAngleRad*180/Math.PI);
+        dialogParam[4] = (double)(tiltAngleRad*180/Math.PI);
 
-        // detected drop tip (more precise than centerY[tip]*param[6])
-        param[1] = centerX[tip]*param[6];
-        param[2] = -tipFit.getCoeff(0)/tipFit.getCoeff(1)*param[6];
+        // detected drop tip (more precise than centerY[tip]*dialogParam[6])
+        dialogParam[1] = centerX[tip]*dialogParam[6];
+        dialogParam[2] = -tipFit.getCoeff(0)/tipFit.getCoeff(1)*dialogParam[6];
         // the former expression assumes the drop is vertical, but we can
         // correct for tilted image:
-        param[1] -= param[3] * (float)Math.sin(tiltAngleRad);
-        param[2] -= param[3] * (1 - (float)Math.cos(tiltAngleRad));
+        dialogParam[1] -= dialogParam[3] * (double)Math.sin(tiltAngleRad);
+        dialogParam[2] -= dialogParam[3] * (1 - (double)Math.cos(tiltAngleRad));
 
         // capillary length: from curvature difference
 
@@ -484,7 +542,7 @@ public class Goutte_pendante implements ExtendedPlugInFilter, Runnable,
         // find maximum thickness
         int yBelly = tip;
         for (int y=tip+1; y < roi.height; y++) {
-            if (!Float.isNaN(halfWidth[y]))
+            if (!Double.isNaN(halfWidth[y]))
                 if (halfWidth[y] > halfWidth[yBelly])
                     yBelly = y;
         }
@@ -497,16 +555,16 @@ public class Goutte_pendante implements ExtendedPlugInFilter, Runnable,
         // fit parabola to neighbourhood of yBelly
         int yBelow = Math.max(tip, yBelly - bellyNeighbourhood);
         int yAbove = Math.min(centerY.length - 1, yBelly + bellyNeighbourhood);
-        float[] xB = Arrays.copyOfRange(centerY, yBelow, yAbove);
-        float[] yB = Arrays.copyOfRange(halfWidth, yBelow, yAbove);
-        float mxB = 0, myB = 0;
+        double[] xB = Arrays.copyOfRange(centerY, yBelow, yAbove);
+        double[] yB = Arrays.copyOfRange(halfWidth, yBelow, yAbove);
+        double mxB = 0, myB = 0;
         int cx = 0, cy = 0;
         for (int y=0; y < xB.length; y++) {
-            if (!Float.isNaN(xB[y])) {
+            if (!Double.isNaN(xB[y])) {
                 mxB += xB[y];
                 cx ++;
             }
-            if (!Float.isNaN(yB[y])) {
+            if (!Double.isNaN(yB[y])) {
                 myB += yB[y];
                 cy ++;
             }
@@ -521,187 +579,101 @@ public class Goutte_pendante implements ExtendedPlugInFilter, Runnable,
         Polynome bellyFit = quadraticFit(xB, yB);
 
         // and calculate curvatures at yBelly
-        float c1 = 1/halfWidth[yBelly];
-        float c2 = - 2*bellyFit.getCoeff(2) /
-            (float)(Math.cos(Math.atan(bellyFit.getCoeff(1))));
-        float c0 = param[6]/param[3];// tip curvature
+        double c1 = 1/halfWidth[yBelly];
+        double c2 = - 2*bellyFit.getCoeff(2) /
+            (double)(Math.cos(Math.atan(bellyFit.getCoeff(1))));
+        double c0 = dialogParam[6]/dialogParam[3];// tip curvature
 
         //IJ.log("c0 = "+c0+", c1 = "+c1+", c2 = "+c2);
 
         // pressure difference between yBelly and tip gives capillary
         // length estimate
-        param[0] = (float)Math.sqrt((tip-yBelly)/(c1+c2-2*c0))*param[6];
+        dialogParam[0] = (double)Math.sqrt((tip-yBelly)/(c1+c2-2*c0))*dialogParam[6];
 
         // initialise density contrast if image calibrated
         // (not very important...)
         // for water at 4 deg C on earth etc, in grams per mm^2 and seconds^2:
-        if (param[6] == 1)// length scale uncalibrated?
-            param[5] = 1.0f;// don't bother
+        if (dialogParam[6] == 1)// length scale uncalibrated?
+            dialogParam[5] = 1.0f;// don't bother
         else
-            param[5] = 9.81f;
-
-        findDropBorders(imp.getProcessor());
+            dialogParam[5] = 9.81f;
     }
 
-    /* Detect drop borders once for every image */
-    ImageProcessor alreadyDetectedIP = null;
-    void findDropBorders(ImageProcessor ip) {
-        final int voisinage = 10; // how many pixels left and right of border to inclue in fit
-        final float threshold = 128.f;
-        if (rightBorder == null) rightBorder = new double[roi.height];
-        if (leftBorder == null) leftBorder = new double[roi.height];
-        // Do nothing if detection was already done for this image
-        if (ip == alreadyDetectedIP) return;
-        // gather rough info on the drop
-        roi = imp.getRoi().getBounds();
-        int yStartBorders = -1;
-        for (int y=0; y < roi.height; y++) {
-            float centerXacc = 0;// accumulator for center of gravity along line
-            int count = 0;
-            int xl=-1, xr=-1;
-            for (int x=0; x<roi.width; x++) {
-                if (ip.getPixelValue(roi.x + x, roi.y + y) < threshold) {// inside drop
-                    count++;
-                    centerXacc += x;
-                    if (xl < 0) xl = x;
-                    xr = -1;
-                } else {// outside drop
-                    if (xr < 0 && xl >= 0) xr = x-1;
-                }
-            }
+    /** Registered as an ActionListener on the 'fit' button,
+     * is therefore called when the latter is pressed.
+     */
+    void fitButtonPressed() {
+        final DropInfo di = DropInfo.getDropInfo(imp.getProcessor());
+        setDropFromDialog(di);
+        
+        runFit(di);
 
-            if (count > voisinage && xl - voisinage >= 0 && xr + voisinage < roi.width) {
-               double minValue = Double.MAX_VALUE, maxValue = Double.NEGATIVE_INFINITY;
-               for (int dx = -voisinage; dx < voisinage; dx++) {
-                       double v = ip.getPixelValue(roi.x + xl + dx, roi.y + y);
-                       if (v > maxValue) maxValue = v;
-                       if (v < minValue) minValue = v;
-               }
-               double acc = 0;
-               for (int dx = -voisinage; dx < voisinage; dx++) {
-                       acc += ip.getPixelValue(roi.x + xl + dx, roi.y + y) - minValue;
-               }
-               acc /= maxValue - minValue;
-               leftBorder[y] = xl - 0.5 - voisinage + acc;
-
-               acc = 0;
-               for (int dx = -voisinage+1; dx <= voisinage; dx++) {
-                       acc += ip.getPixelValue(roi.x + xr + dx, roi.y + y) - minValue;
-               }
-               acc /= maxValue - minValue;
-               rightBorder[y] = xr + 0.5 + voisinage - acc;
-
-               //IJ.log("y=" + y + ", xl=" + xl + ", xr=" + xr + ", count=" + count);
-               //IJ.log("right=" + rightBorder[y] + ", left=" + leftBorder[y] );
-               //ip.putPixelValue((int)rightBorder[y]+roi.x, roi.y+y, (y&1)==0 ? 255 : 0);
-               //ip.putPixelValue((int)leftBorder[y]+roi.x, roi.y+y, (y&1)==0 ? 255 : 0);
-               yDropTip = y;
-            } else {
-                leftBorder[y] = Float.NaN;
-                rightBorder[y] = Float.NaN;
-                if (count == 0) {// we reached the tip of the drop
-                  break;
-                }
-            }
-
-        }
-        // remember that we detected the borders for this image
-        alreadyDetectedIP = ip;
+        showCurve(di.getShape());
+        setDialogFromDrop(di);
     }
 
-    /** Entry point and loop of the worker thread which updates the contour
-     * and/or does the fit. */
-    public void run() {
-        while (true) {// worker thread spends all its life in this method
-            if (!workToDo) {
-                synchronized (this) {
-                    try {
-                        wait();// until there is something to do
-                    } catch (InterruptedException e) {
-                        e.printStackTrace();
-                    }
-                }
-            }
-            workToDo = false;
-            if (workerRetire) break;// this was our last wake-up
+    /** Calculate new contour. Called when preview is requested and
+     * any parameter is modified, or for the final processing.
+     */
+    public void run(ImageProcessor ip) {
+        final DropInfo di = DropInfo.getDropInfo(ip);
 
-            // make sure we have up-to-date parameters
-            boolean paramsModified = getDialogParameters();
-            if (parseError) {
-                if (workerDoFit)
-                    IJ.log("Dialog contains invalid parameters, cannot fit.");
-            } else if (workerDoFit || paramsModified) {
+        // decide whether to do full fit or merely update contour
+        if (isDialogActive()) {
+            // prepare with latest parameters from dialog
+            setDropFromDialog(di);
 
-                dialog.previewRunning(true);
-
-                double Q = 0;
-
-                if (workerDoFit) {
-                    final long timeStart = System.currentTimeMillis();
-
-                    // reset flags that will interrupt the lengthy calculations
-                    workerInterrupt = false;
-                    IJ.resetEscape();
-
-                    // check we have at least one parameter to fit
-                    boolean haveFreeParam = false;
-                    for (int i=0; i < fitMe.length; i++)
-                        haveFreeParam |= fitMe[i];
-
-                    // and start the minimisation
-                    if (haveFreeParam)
-                        Q = minPowell(fitparam, fitMe, calcMatchVal, 100);
-                    else
-                        IJ.error(pluginMenuName,
-                                 "Please check at least one parameter to fit");
-
-                    final long time2 = System.currentTimeMillis();
-                    IJ.showStatus("fit took "+(time2-timeStart)+"ms");
-                    IJ.log("fit took "+(time2-timeStart)+"ms");
-
-                    // fit done: update dialog to reflect new parameters
-                    setDialogParameters();
-                }
-
-                // calculate the drop profile and draw
-                Path2D p = calculateProfile(fitparam[3]/fitparam[0],
-                                            roiHeightPix*param[6]/fitparam[0]);
-                Shape s = dropToScreen(p, fitparam[0]/param[6], fitparam[1]/param[6],
-                                       fitparam[2]/param[6], fitparam[4]);
-                showCurve(s);
-                if (!workerDoFit)
-                    Q = fitQuality(s);
-
-                adjustmentPenaltyLabel.setText(adjustmentPenaltyString + Q);
-                surfaceTensionLabel.setText(surfaceTensionString +
-                                            fitparam[0]*fitparam[0]*param[5]);
-                //System.err.println("Q="+Q+" for capillary length = "+fitparam[0] +
-                //       ", surface tension = "+fitparam[0]*fitparam[0]*param[5]);
-                IJ.log("drop surface (non-dim):"+calcDropSurface(p)+"\n");
-
-                dialog.previewRunning(false);
-                workerDoFit = false;// to prevent running fit again on
-                                    // spurious wake-up
-            }
+            runContour(di);
+            
+            showCurve(di.getShape());
+            setDialogFromDrop(di);
+        } else {
+            runFit(di);
         }
-        // log results before quitting
-        getDialogParameters();
-        IJ.log("__Drop shape summary__\n");
-        IJ.log("capillary length: "+param[0]+"\n");
-        IJ.log("tip x coordinate: "+param[1]+"\n");
-        IJ.log("tip y coordinate: "+param[2]+"\n");
-        IJ.log("tip radius of curvature: "+param[3]+"\n");
-        IJ.log("deviation gravity from vertical (deg): "+param[4]+"\n");
-        IJ.log("density contrast * gravitational acceleration (rho*g): "+param[5]+"\n");
-        IJ.log("pixel size: "+param[6]+"\n");
-        IJ.log("surface tension: "+param[0]*param[0]*param[5]+"\n");
+    }
+
+    /** Updates the contour. */
+    public void runContour(DropInfo di) {
+        // calculate the drop profile
+        double[] param = di.getFitParam();
+        double pixelScale = di.getPixelScale();
+        
+        Path2D p = calculateProfile(param[3]/param[0],
+                                    di.bounds.height*pixelScale/param[0]);
+        Shape s = dropToScreen(p, param[0]/pixelScale, param[1]/pixelScale,
+                               param[2]/pixelScale, param[4], di);
+
+        di.setProfile(p);
+        di.setShape(s);
+    }
+
+    /** Find a drop shape that minimises the adjustment penalty
+     * function, by varying a subset of the shape parameters. */
+    public boolean runFit(DropInfo di) {
+            // check we have at least one parameter to fit
+            boolean haveFreeParam = false;
+            for (int i=0; i < fitMe.length; i++)
+                haveFreeParam |= fitMe[i];
+            if (!haveFreeParam) {
+                IJ.error(pluginMenuName,
+                         "Please check at least one parameter to fit");
+                return false;
+            }
+            
+            // and start the minimisation
+            double[] fitParam = di.getFitParam();
+            minPowell(fitParam, fitMe, calcMatchVal, 100);
+
+            runContour(di);
+
+            return true;
     }
 
     double calcDropSurface(Path2D drop) {
         final double flatness = 1e-5f; // should not have any effect
                                         // as drop is a polygon
         double oz, or, z, r; // initial and final points of segments
-        final float[] coords = new float[6]; // segment coordinates
+        final double[] coords = new double[6]; // segment coordinates
         double surface = 0;
 
         PathIterator iter = drop.getPathIterator(null, flatness);
@@ -725,58 +697,10 @@ public class Goutte_pendante implements ExtendedPlugInFilter, Runnable,
         return surface;
     }
 
-    /** Notify waiting worker of work to do. */
-    synchronized void notifyWorker() {
-        notify();
-    }
-
-    /** Called when fit is requested. */
-    void doFit() {
-        if (workerThread.getState() == Thread.State.WAITING) {
-            IJ.log("start fit!");
-            workerDoFit = true;
-            workToDo = true;
-            notifyWorker();
-        } else {
-            IJ.log("stop fit!");
-            workerInterrupt = true;
-        }
-    }
-
-    /** Update drop contour. Called when preview is requested and any
-     * parameter is modified. */
-    public void run(ImageProcessor ip) {
-        // find drop borders for later
-        findDropBorders(ip);
-
-        // wake up worker thread
-        workerDoFit = false;
-        workToDo = true;
-        notifyWorker();
-    }
-
-    /** This checks if user has requested to stop calculations (e.g.
-     * by pressing the escape key). */
-    boolean quitLengthyCalculations() {
-        if (workerInterrupt || IJ.escapePressed())
-            IJ.log("Interrupt request received");
-        return workerInterrupt || IJ.escapePressed();
-    }
-
     /** Set given curve as overlay on image. */
     void showCurve(Shape c) {
         if (c == null) return;
-        //// translation by +(0.5,0.5)
-        //AffineTransform t = new AffineTransform(1, 0, 0, 1, 0.5, 0.5);
-        //imp.setOverlay(t.createTransformedShape(c), Color.red, null);
         imp.setOverlay(c, Color.red, null);
-    }
-
-    /** Tells worker thread to quit. */
-    private void exitWorkerThread() {
-        workerRetire = true;
-        workerInterrupt = true;
-        notifyWorker();
     }
 
     /** Method of the ExtendedPlugInFilter which we do not use here.
@@ -785,78 +709,6 @@ public class Goutte_pendante implements ExtendedPlugInFilter, Runnable,
      */
     public void setNPasses(int nPasses) {}
 
-    /** Helper method to extract float value from TextField. */
-    float getFloat(Vector<TextField> nf, int index) {
-        TextField tf = nf.elementAt(index);
-        float val = 0f;
-        try { val = Float.parseFloat(tf.getText()); }
-        catch (NumberFormatException e) {
-            parseError = true;
-            System.err.println(e.toString());
-        }
-        return val;
-    }
-
-    /** Read parameters from the dialog and re-calculate depending
-     * params. If numerical values changed return true to signal new
-     * preview is needed. */
-    // SuppressWarnings annotation to get rid of warnings concerning
-    // casts of dialog.get... return values to Vector<...>.
-    @SuppressWarnings("unchecked")
-        boolean getDialogParameters() {
-        float val;
-        boolean change = false;
-        parseError = false;
-
-        // read numerical fields
-        Vector<TextField> nf = (Vector<TextField>)dialog.getNumericFields();
-        for (int n=0; n < Nparam; n++) {
-            //val = (float)dialog.getNextNumber();
-            val = getFloat(nf, n);
-            if (val != param[n]) {
-                param[n] = val;
-                change |= true;
-            }
-        }
-        // do a few additional checks to ensure we have sensible values
-        for (int n=0; n < 4; n++) {// length must be positive
-            if (param[n] <= 0) parseError = true;
-        }
-        if (param[6] <= 0) parseError = true;// scale must be positive
-
-        // parseError = dialog.invalidNumber();
-
-        // check which parameters are free for fitting and which are fixed
-        Vector<Checkbox> cb = (Vector<Checkbox>)dialog.getCheckboxes();
-        for (int n=0; n < Nfitparam; n++) {
-            fitMe[n] = cb.elementAt(n).getState();
-        }
-
-        // set fit parameters from dialog params
-        fitparam[0] = param[0];
-        fitparam[1] = param[1];
-        fitparam[2] = param[2];
-        fitparam[3] = param[3];
-        fitparam[4] = (param[4]/180+2)*Math.PI;
-
-        return change;
-    }
-
-    /** Set dialog parameters from fitted values. */
-    @SuppressWarnings("unchecked")
-        void setDialogParameters() {
-        // calculate dialog parameters from fit parameters
-        param[0] = (float)fitparam[0];
-        param[1] = (float)fitparam[1];
-        param[2] = (float)fitparam[2];
-        param[3] = (float)fitparam[3];
-        param[4] = (float)((fitparam[4]/Math.PI-2)*180);
-
-        Vector<TextField> nf = (Vector<TextField>)dialog.getNumericFields();
-        for (int n=0; n < Nparam; n++) {
-            nf.elementAt(n).setText(Float.toString(param[n]));
-        }
-    }
 
     /** Hydrostatic pressure equilibrium equations for an axisymetric drop.
      * variables (r, psi, kappa, z) represent
@@ -883,7 +735,7 @@ public class Goutte_pendante implements ExtendedPlugInFilter, Runnable,
         //System.err.println("tipRadius = "+tipRadius+", zMax = "+zMax);
 
         final double ds = 0.001;// integration step
-        final ArrayList<Point2D.Float> profile = new ArrayList<Point2D.Float>((int)(zMax/ds));
+        final ArrayList<Point2D.Double> profile = new ArrayList<Point2D.Double>((int)(zMax/ds));
 
         // Near the drop tip the integral equations become singular,
         // but the solution is simply a nearly perfectly spherical
@@ -903,13 +755,13 @@ public class Goutte_pendante implements ExtendedPlugInFilter, Runnable,
             sLimit = approxLimit*tipRadius;// tipRadius is limiting
         else
             sLimit = approxLimit;// the capillary length is limiting
-        profile.add(new Point2D.Float(0, 0));
+        profile.add(new Point2D.Double(0, 0));
         for (s=0; s < sLimit; s += ds) {
             double r, z;
             r = tipRadius*Math.sin(s/tipRadius) +
                 Math.pow(s,5)/(40*tipRadius*tipRadius);
             z = 0.5f*s*s*(1-s*s*(0.75f+1/(tipRadius*tipRadius))/12)/tipRadius;
-            profile.add(new Point2D.Float((float)r,(float)z));
+            profile.add(new Point2D.Double((double)r,(double)z));
         }
 
         // now continue through integration with a Runge-Kutta scheme
@@ -939,7 +791,7 @@ public class Goutte_pendante implements ExtendedPlugInFilter, Runnable,
             for (int i=0; i<nVar; i++)
                 etat[i] = etat[i] + ds*(k1[i]+2*k2[i]+2*k3[i]+k4[i])/6;
             if (k4[3] < 0) break; // abort if profile bends back downwards
-            profile.add(new Point2D.Float((float)etat[0],(float)etat[3]));
+            profile.add(new Point2D.Double((double)etat[0],(double)etat[3]));
         }
         //System.err.println("r="+etat[0]);
         //System.err.println("z="+etat[3]);
@@ -949,8 +801,8 @@ public class Goutte_pendante implements ExtendedPlugInFilter, Runnable,
         // finally construct closed drop contour from profile by
         // concatenating the profile with its reflection about the
         // y-axis
-        Path2D.Float drop = new Path2D.Float();
-        Point2D.Float p;
+        Path2D.Double drop = new Path2D.Double();
+        Point2D.Double p;
         int N = profile.size();
         p = profile.get(0);
         drop.moveTo(p.x, p.y);
@@ -976,7 +828,7 @@ public class Goutte_pendante implements ExtendedPlugInFilter, Runnable,
      *  @param angle deviation of gravity from vertical in degrees
      */
     Shape dropToScreen(Path2D drop, double scale, double tipX, double tipY,
-                       double angle) {
+                       double angle, DropInfo di) {
         //System.err.println("scale = "+scale+", tipX = "+tipX+", tipY = "+tipY+", angle = "+angle);
 
         // read this bottom-up to get the order of transformations right...
@@ -994,12 +846,12 @@ public class Goutte_pendante implements ExtendedPlugInFilter, Runnable,
         final double flatness = 0.5; // probably no effect unless the
         // flattening path iterator also
         // flattens polygons
-        final float minDist2 = 1.0f; // square of minimal distance
+        final double minDist2 = 1.0f; // square of minimal distance
         // between points in the low res
         // version (in pixels)
-        Path2D lowresDrop = new Path2D.Float();
-        float[] coords = new float[6];
-        float ox, oy;
+        Path2D lowresDrop = new Path2D.Double();
+        double[] coords = new double[6];
+        double ox, oy;
         PathIterator iter = drop.getPathIterator(toScreenT, flatness);
         iter.currentSegment(coords);
         ox = coords[0];
@@ -1012,8 +864,8 @@ public class Goutte_pendante implements ExtendedPlugInFilter, Runnable,
                 lowresDrop.closePath();
                 break;
             }
-            float x = coords[0];
-            float y = coords[1];
+            double x = coords[0];
+            double y = coords[1];
             //System.err.println("type = "+type+", x = "+x+", y = "+y+
             //       ", d2 = "+((x-ox)*(x-ox)+(y-oy)*(y-oy)));
             if ((x-ox)*(x-ox)+(y-oy)*(y-oy) > minDist2) {
@@ -1026,7 +878,7 @@ public class Goutte_pendante implements ExtendedPlugInFilter, Runnable,
         lowresDrop.closePath();
 
         Area visibleDrop = new Area(lowresDrop);
-        visibleDrop.intersect(roiArea);
+        visibleDrop.intersect(di.getBoundsArea());
 
         //System.err.println("original: "+getShapeLength(drop));
         //System.err.println("low res : "+getShapeLength(lowresDrop));
@@ -1044,18 +896,6 @@ public class Goutte_pendante implements ExtendedPlugInFilter, Runnable,
             iter.next();
         }
         return size;
-    }
-
-    double getLineQuality(int y, int xl, int xr) {
-        final double backgroundVal = 255.;
-        double Q = 0;
-        for (int x = roi.x; x < roi.x+roi.width; x++) {
-            if (x < xl || x > xr) // outside drop
-                Q += backgroundVal - ip.getPixelValue(x,y);
-            else // inside drop
-                Q += ip.getPixelValue(x,y);
-        }
-        return Q;
     }
 
     double fitQuality(Shape drop) {
@@ -1173,6 +1013,7 @@ public class Goutte_pendante implements ExtendedPlugInFilter, Runnable,
         double function(double[] x);
     }
 
+    /* This function calculates the quality of the fit. */
     final Function calcMatchVal = new Function() {
             public double function(double[] x) {
                 Path2D p=null;
@@ -1180,14 +1021,14 @@ public class Goutte_pendante implements ExtendedPlugInFilter, Runnable,
                 if (x[0] < 0 || x[3] <= 0) return Double.POSITIVE_INFINITY;
                 try {
                     p = calculateProfile(x[3]/x[0],
-                                         roiHeightPix*param[6]/x[0]);
+                                         roi.height*dialogParam[6]/x[0]);
                 } catch (Exception e) {
                     e.printStackTrace();
-                    System.err.println("roiHeightPix="+roiHeightPix+
-                                       ", param[6]="+param[6]+", x[0]="+x[0]);
+                    System.err.println("roi.height="+roi.height+
+                                       ", dialogParam[6]="+dialogParam[6]+", x[0]="+x[0]);
                 }
-                Shape s = dropToScreen(p, x[0]/param[6], x[1]/param[6],
-                                       x[2]/param[6], x[4]);
+                Shape s = dropToScreen(p, x[0]/dialogParam[6], x[1]/dialogParam[6],
+                                       x[2]/dialogParam[6], x[4], di);
                 double Q = fitQuality(s);
                 //System.err.println("Q = "+Q+" at x[0] = "+x[0]+", x[1] = "+x[1]+", x[2] = "+x[2]+", x[3] = "+x[3]+", x[4] = "+x[4]);
                 return Q;
@@ -1445,11 +1286,11 @@ public class Goutte_pendante implements ExtendedPlugInFilter, Runnable,
         return p;
     }
 
-    double minPowell(double[] fitparam, boolean[] fitMe, Function minMe, int maxNumStep) {
+    double minPowell(double[] fitParam, boolean[] fitMe, Function minMe, int maxNumStep) {
         final double precision1 = 1e-8;
         final double precision2 = 1e-15;
-        final int N = fitparam.length;
-        double[] xCur = Arrays.copyOf(fitparam,N);
+        final int N = fitParam.length;
+        double[] xCur = Arrays.copyOf(fitParam,N);
         double[] xOld = new double[N];
         double[] xE = new double[N];
         double fCur = minMe.function(xCur);
@@ -1493,9 +1334,9 @@ public class Goutte_pendante implements ExtendedPlugInFilter, Runnable,
                     numDownSteps ++;
                 }
                 Path2D p = calculateProfile(xCur[3]/xCur[0],
-                                            roiHeightPix*param[6]/xCur[0]);
-                Shape s = dropToScreen(p, xCur[0]/param[6], xCur[1]/param[6],
-                                       xCur[2]/param[6], xCur[4]);
+                                            roi.height*dialogParam[6]/xCur[0]);
+                Shape s = dropToScreen(p, xCur[0]/dialogParam[6], xCur[1]/dialogParam[6],
+                                       xCur[2]/dialogParam[6], xCur[4]);
                 showCurve(s);
             }
             // test for convergence
@@ -1537,7 +1378,7 @@ public class Goutte_pendante implements ExtendedPlugInFilter, Runnable,
             IJ.log("minimisation failed");
         else
             IJ.log("minimisation succeeded");
-        for (int i=0; i < N; i++) fitparam[i] = xCur[i];
+        for (int i=0; i < N; i++) fitParam[i] = xCur[i];
         return fCur;
     }
 
@@ -1745,4 +1586,143 @@ public class Goutte_pendante implements ExtendedPlugInFilter, Runnable,
         return doc;
     }
 
+}
+
+
+class DropInfo {// holds information on a given ImageProcessor
+    private DropInfo(ImageProcessor ip) {
+        this.ip = ip;
+        bounds = ip.getRoi().getBounds();
+    }
+    
+    private final static HashMap<ImageProcessor, DropInfo> instances =
+        new HashMap<ImageProcessor, DropInfo>();
+    
+    // Return DropInfo instance for given ImageProcessor
+    public static DropInfo getDropInfo(ImageProcessor ip) {
+        if (! instances.containsKey(ip)) {
+            DropInfo di = new DropInfo(ip);
+            instances.put(ip, di);
+        }
+        return instances.get(ip);
+    }
+    
+    private ImageProcessor ip;
+    public ImageProcessor getImageProcessor() { return ip; }
+    
+    public Rectangle bounds;
+    private Area boundsArea;
+    public Area getBoundsArea() {
+        if (boundsArea == null)
+            boundsArea = new Area(bounds);
+        return boundsArea;
+    }
+    
+    private double[] fitParam;
+    public double[] getFitParam() {
+        if (fitParam == null) { // idea: initialise from other ip ?
+            fitParam = new double[nFitParam];
+        }
+        return fitParam;
+    }
+    public void setFitParam(double p0, double p1, double p2,
+                            double p3, double p4) {
+        if (fitParam == null)
+            fitParam = new double[nFitParam];
+        fitParam[0] = p0;
+        fitParam[1] = p1;
+        fitParam[2] = p2;
+        fitParam[3] = p3;
+        fitParam[4] = p4;
+    }
+    
+    private double pixelScale = 1.0;
+    public double getPixelScale() { return pixelScale; }
+    public void setPixelScale(double s) { pixelScale = s; }
+    
+    private double densityGrav = 1.0;
+    public double getDensityGrav() { return densityGrav; }
+    public void setDensityGrav(double rho_g) { densityGrav = rho_g; }
+    
+    private Path2D profile;
+    public Path2D getProfile() { return profile; }
+    public void setProfile(Path2D profile) { this.profile = profile; }
+    
+    private Shape shape;
+    public Shape getShape() { return shape; }
+    public void setShape(Shape shape) { this.shape = shape; }
+    
+    public double getQuality() {
+        return fitQuality(shape);
+    }
+        
+    private double[] leftBorder;
+    public double[] getLeftBorder() {
+        if (leftBorder == null) findDropBorders();
+        return leftBorder;
+    }
+
+    public double[] rightBorder;
+    public double[] getrightBorder() {
+        if (rightBorder == null) findDropBorders();
+        return rightBorder;
+    }
+
+    /** Detect drop borders and store positions in the left/rightBorder arrays. */
+    private void findDropBorders(ImageProcessor ip) {
+        final int voisinage = 10; // pixels around border to include in fit
+        final double threshold = 128.f;
+        leftBorder = null;
+        
+        for (int y = bounds.height - 1; y >= 0; y--) {
+            
+            // find border positions with integer precision
+            int xl = -1, xr = -1;
+            for (int x = 0; x < bounds.width; x++) {
+                if (ip.getPixelValue(bounds.x + x, bounds.y + y) < threshold) {
+                    if (xl < 0) xl = x;  // inside drop
+                    xr = -1;
+                } else {// outside drop
+                    if (xr < 0 && xl >= 0) xr = x;
+                }
+            }
+            
+            // don't go further if not enough pixels for subpixel-fitting 
+            if (xr - xl <= voisinage ||
+                xl - voisinage < 0 || xr + voisinage > bounds.width) {
+                if (leftBorder != null) {
+                    leftBorder[y]  = xl >= 0 ? xl - 0.5 : Double.NaN;
+                    rightBorder[y] = xr >= 0 ? xr - 0.5 : Double.NaN;
+                }
+                continue;
+            }
+            
+            if (leftBorder == null) { // allocate array on drop tip detection
+                leftBorder = new double[y+1];
+                rightBorder = new double[y+1];
+            }
+            
+            // now determine drop borders with sub-pixel precision
+            leftBorder[y]  = fitStep(xl, y, voisinage, false);
+            rightBorder[y] = fitStep(xr, y, voisinage, true);
+        } // end for y
+    }
+    
+    private double fitStep(int x, int y, int n, boolean rising) {
+        double acc = 0;
+        double minValue = Double.POSITIVE_INFINITY;
+        double maxValue = Double.NEGATIVE_INFINITY;
+        for (int dx = -n; dx < n; dx++) {
+            double v = ip.getPixelValue(bounds.x + x + dx, bounds.y + y);
+            acc += v;
+            if (v > maxValue) maxValue = v;
+            if (v < minValue) minValue = v;
+        }
+        acc -= 2*n*minValue;
+        acc /= maxValue - minValue;
+        if (rising)
+            return x - 0.5 + n - acc;
+        else
+            return x - 0.5 - n + acc;
+    }
 }
