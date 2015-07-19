@@ -226,7 +226,7 @@ public class Goutte_pendante implements ExtendedPlugInFilter, Runnable,
         this.imp = imp;
         ip = imp.getProcessor();
 
-        return DOES_8G | DOES_16 | DOES_32 | ROI_REQUIRED | NO_CHANGES |
+        return DOES_8G | DOES_16 | DOES_32 | ROI_REQUIRED | // NO_CHANGES |
             KEEP_PREVIEW;
     }
 
@@ -546,7 +546,7 @@ public class Goutte_pendante implements ExtendedPlugInFilter, Runnable,
     /* Detect drop borders once for every image */
     ImageProcessor alreadyDetectedIP = null;
     void findDropBorders(ImageProcessor ip) {
-        final int voisinage = 10; // how many pixels left and right of border to inclue in fit
+        final int voisinage = 10; // how many pixels left and right of border to include in fit
         final float threshold = 128.f;
         if (rightBorder == null) rightBorder = new double[roi.height];
         if (leftBorder == null) leftBorder = new double[roi.height];
@@ -566,41 +566,49 @@ public class Goutte_pendante implements ExtendedPlugInFilter, Runnable,
                     if (xl < 0) xl = x;
                     xr = -1;
                 } else {// outside drop
-                    if (xr < 0 && xl >= 0) xr = x-1;
+                    if (xr < 0 && xl >= 0) xr = x;
                 }
             }
 
             if (count > voisinage && xl - voisinage >= 0 && xr + voisinage < roi.width) {
-               double minValue = Double.MAX_VALUE, maxValue = Double.NEGATIVE_INFINITY;
-               for (int dx = -voisinage; dx < voisinage; dx++) {
-                       double v = ip.getPixelValue(roi.x + xl + dx, roi.y + y);
-                       if (v > maxValue) maxValue = v;
-                       if (v < minValue) minValue = v;
-               }
-               double acc = 0;
-               for (int dx = -voisinage; dx < voisinage; dx++) {
-                       acc += ip.getPixelValue(roi.x + xl + dx, roi.y + y) - minValue;
-               }
-               acc /= maxValue - minValue;
-               leftBorder[y] = xl - 0.5 - voisinage + acc;
-
-               acc = 0;
-               for (int dx = -voisinage+1; dx <= voisinage; dx++) {
-                       acc += ip.getPixelValue(roi.x + xr + dx, roi.y + y) - minValue;
-               }
-               acc /= maxValue - minValue;
-               rightBorder[y] = xr + 0.5 + voisinage - acc;
-
-               //IJ.log("y=" + y + ", xl=" + xl + ", xr=" + xr + ", count=" + count);
-               //IJ.log("right=" + rightBorder[y] + ", left=" + leftBorder[y] );
-               //ip.putPixelValue((int)rightBorder[y]+roi.x, roi.y+y, (y&1)==0 ? 255 : 0);
-               //ip.putPixelValue((int)leftBorder[y]+roi.x, roi.y+y, (y&1)==0 ? 255 : 0);
-               yDropTip = y;
+                double minValue = Double.MAX_VALUE;
+                double maxValue = Double.NEGATIVE_INFINITY;
+                for (int dx = -voisinage; dx < voisinage; dx++) {
+                    double v = ip.getPixelValue(roi.x + xl + dx, roi.y + y);
+                    if (v > maxValue) maxValue = v;
+                    if (v < minValue) minValue = v;
+                }
+                double acc = 0;
+                for (int dx = -voisinage; dx < voisinage; dx++) {
+                    acc += ip.getPixelValue(roi.x + xl + dx, roi.y + y) - minValue;
+                }
+                acc /= maxValue - minValue;
+                leftBorder[y] = xl - 0.5 - voisinage + acc;
+                
+                minValue = Double.MAX_VALUE;
+                maxValue = Double.NEGATIVE_INFINITY;
+                for (int dx = -voisinage; dx < voisinage; dx++) {
+                    double v = ip.getPixelValue(roi.x + xr + dx, roi.y + y);
+                    if (v > maxValue) maxValue = v;
+                    if (v < minValue) minValue = v;
+                }
+                acc = 0;
+                for (int dx = -voisinage; dx < voisinage; dx++) {
+                    acc += ip.getPixelValue(roi.x + xr + dx, roi.y + y) - minValue;
+                }
+                acc /= maxValue - minValue;
+                rightBorder[y] = xr - 0.5 + voisinage - acc;
+                
+                //IJ.log("y=" + y + ", xl=" + xl + ", xr=" + xr + ", count=" + count);
+                //IJ.log("right=" + rightBorder[y] + ", left=" + leftBorder[y] );
+                //ip.putPixelValue((int)rightBorder[y]+roi.x, roi.y+y, (y&1)==0 ? 255 : 0);
+                //ip.putPixelValue((int)leftBorder[y]+roi.x, roi.y+y, (y&1)==0 ? 255 : 0);
+                yDropTip = y;
             } else {
                 leftBorder[y] = Float.NaN;
                 rightBorder[y] = Float.NaN;
                 if (count == 0) {// we reached the tip of the drop
-                  break;
+                    break;
                 }
             }
 
@@ -769,7 +777,27 @@ public class Goutte_pendante implements ExtendedPlugInFilter, Runnable,
         //// translation by +(0.5,0.5)
         //AffineTransform t = new AffineTransform(1, 0, 0, 1, 0.5, 0.5);
         //imp.setOverlay(t.createTransformedShape(c), Color.red, null);
-        imp.setOverlay(c, Color.red, null);
+        //imp.setOverlay(c, Color.red, null);
+        Path2D.Float border = new Path2D.Float();
+        border.moveTo(roi.x + leftBorder[0], roi.y + 0);
+        for (int y = 0; y < leftBorder.length; y++) {
+        border.lineTo(roi.x + leftBorder[y], roi.y + y);
+        }
+        for (int y = rightBorder.length-1; y>=0; y--) {
+        border.lineTo(roi.x + rightBorder[y], roi.y + y);
+        }
+        border.closePath();
+
+		ij.gui.Roi roi = new ij.gui.ShapeRoi(new Area(border));
+		roi.setStrokeColor(Color.blue);
+		ij.gui.Overlay o = new ij.gui.Overlay(roi);
+
+		roi = new ij.gui.ShapeRoi(c);
+		roi.setStrokeColor(Color.red);
+		o.add(roi);
+		
+		//roi.setStroke(stroke);
+		imp.setOverlay(o);
     }
 
     /** Tells worker thread to quit. */
