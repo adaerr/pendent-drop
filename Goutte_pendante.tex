@@ -1,3 +1,4 @@
+
 \documentclass[fleqn]{scrartcl}
 \usepackage{graphicx}
 \usepackage[T1]{fontenc}
@@ -5,9 +6,12 @@
 \usepackage{lmodern}
 \usepackage{xspace}
 \usepackage{tikz}
+\usepackage{SIunits}
 \usetikzlibrary{decorations}
 \usetikzlibrary{calc}
 \usepgflibrary{decorations.pathmorphing}
+
+\usepackage{pstricks,pst-plot,pstricks-add} 
 
 \usepackage[pdftitle={Pendant drop measurement with ImageJ},
     pdfauthor={Adrian Daerr},
@@ -148,9 +152,7 @@ Draw a rectangular Region Of Interest (ROI) around the pendant drop
 before calling the Plugin (Fig.~\ref{fig:usage}-middle). The ROI
 should not include the inlet tube, but only the free surface of the
 drop. A few ten or so pixels margin around the drop should be
-sufficient. Including more of the outside region will not do harm, but
-will slightly slow down calculations.
-
+sufficient. 
 
 \section{Installing the Plugin}
 \label{sec:installation}
@@ -249,7 +251,7 @@ gravitational acceleration), then the surface tension is indicated
 directly in the dialog. For example if the \texttt{pixel size} is in
 millimetres, and the \texttt{density contrast times g} is in grams per
 square second and square millimetre (e.g.\ around
-$9.8\,\mathrm{g}/\mathrm{mm}^2\mathrm{s}^2$ for water in air on
+\unit{9.8}{m/s^2} for water in air on
 earth), then the indicated surface tension is in
 $\mathrm{g}/\mathrm{s}^2$ or milli-Newton per metre. Otherwise the
 surface tension $\sigma$ has to be calculated by hand from the
@@ -371,18 +373,13 @@ pixels in the Region Of Interest
 \]
 
 \noindent of per-pixel-penalties $\mathrm{Err}(p)$, which are
-determined from the pixel intensity value $I(p)$ as
+determined from the distance between drawn and theoretical contour on every lines as
 
 \[
-\mathrm{Err}(p) = \left\{ \begin{array}{ll}
-I(p) & \textrm{if } p \textrm{ is inside the drop contour } \mathcal{C} \\
-I_{\mathrm{max}}-I(p) & 
-\textrm{if } p \textrm{ is outside the drop contour } \mathcal{C}
-\end{array} \right.
+\mathrm{Err}(p) = (x_{theoretical\:contour} - x_{drawn\:contour})^2
 \]
 
-The rationale behind this penalty function is to count drop and
-non-drop pixels as penalty for the calculated contour if they are on
+The rationale behind this penalty function is to count how many pixels separate the contours as penalty for the calculated contour if they are on
 the wrong side. The input image is such that pixels belonging to the
 drop on the image are near black, i.e. have a small, near zero intensity value: $I(p) \approx 0$. If they are within the calculated contour as they
 should their $\mathrm{Err}(p)$ is small according to the formula
@@ -404,14 +401,71 @@ minimise along another direction in parameter space, i.e.\ modify
 several parameters concurrently, and possibly updates the list of
 directions. The whole process is repeated until the change in the
 penalty value after a full round becomes too small. For more details
-see references~\cite{Powell1965,Brandt1992}.
+see references~\cite{Powell1965,Brandt1992}. \\
+
+\begin{flushleft}
+
+	\begin{tabular}{c|c c c c c c}
+	 & water & hexadecane & mercury  \\\hline\\
+	capillary length from literature & \unit{2.716}{mm}\cite{gamma_eau&Hg1}\cite{gamma_eau&Hg2}\cite{gamma_eau} & \unit{1.882}{mm}\cite{gamma_hexadecane} & \unit{1.87}{mm}\cite{gamma_eau&Hg1}\cite{gamma_eau&Hg2}\cite{gamma_mercury} \\
+	& $ \pm \unit{0.01}{mm}$ & $\pm \unit{0.03}{mm} $ & $\pm \unit{0.05}{mm} $\\\\
+	capillary length plugin & \unit{2.703}{mm} & \unit{1.863}{mm} & \unit{1.70}{mm} \\
+	 & $ \pm \unit{0.015}{mm} $ & $ \pm \unit{0.018}{mm} $ & $ \pm \unit{0.15}{mm} $ \\\\
+	capillary length reference experiment & \unit{2.697}{mm} & \unit{1.882}{mm} &  \\
+	& $ \pm \unit{0.01}{mm} $ & $\pm \unit{0.02}{mm} $ \\\\
+	Plugin on reference experiment picture & \unit{2.750}{mm} & \unit{1.890}{mm} &  \\
+	& $\pm \unit{0.01}{mm} $ & $\pm \unit{0.03}{mm} $ \\\\
+	Temperature & \unit{303}{K} & \unit{303}{K} & \unit{295}{K} \\\\
+	Density & \unit{995.7}{kg/m^3} & \unit{767.7}{kg/m^3} & \unit{13553}{kg/m^3} \\
+	&  \cite{rho_eau1}\cite{rho_eau2}\cite{rho_eau3} & \cite{rho_hexadecane1}\cite{rho_hexadecane2}\cite{rho_hexadecane3} & \cite{rho_mercury1}\cite{rho_mercury2}\cite{rho_mercury3}
+	\end{tabular}
+\end{flushleft}
+\begin{center}
+	\begin{tikzpicture}[scale=0.9]
+		\draw (0,0) circle (5pt); % source
+		\draw (0.5,-2)--(0.5,-0.1); % diaphragme source
+		\draw (0.5,0.1)--(0.5,2);
+		\draw (2.5,1.3) .. controls (2.3,0) .. (2.5,-1.3); % L1
+		\draw (2.5,1.3) .. controls (2.7,0) .. (2.5,-1.3);
+		\draw (6.9,2.5)--(6.9,0.7)--(7.1,0.7)--(7.1,2.5); % tube
+		\draw (6.9,0.7) .. controls (6,-1) and (8,-1) .. (7.1,0.7); % goutte
+		\begin{scope}[yscale=-0.944/1.3]
+		\draw (14.7,2.5)--(14.7,0.7)--(14.845,0.7)--(14.845,2.5); % tube
+		\draw (14.7,0.7) .. controls (14.04,-1) and (15.5,-1) .. (14.845,0.7); % goutte
+		\end{scope}		
+		\draw (11,2.5)--(15.15,2.5)--(15.15,-2.5)--(11,-2.5); % cadre appareil
+		%\draw (15,2.5)--(14.7,2)--(15,1)--(14.7,0)--(15,-1)--(14.7,-2) % ccd
+		--(15,-2.5)--(14.7,-2.5)--(15,-2)--(14.7,-1)--(15,0)--(14.7,1)
+		--(15,2)--(14.7,2.5);
+		\draw (14.7,2.5)--(14.7,-2.5);
+		\draw (13.355,2.5)--(13.355,0.9); % diaphragme camera
+		\draw (13.355,-0.9)--(13.355,-2.5);
+		\draw (11.5,2.5) .. controls (11,2.5) and (11,-2.5) .. (11.5,-2.5); % L2
+		\draw (11.5,2.5) .. controls (12,2.5) and (12,-2.5) .. (11.5,-2.5);
+		\draw (0,0)--(0.5,0.1); % rayons source
+		\draw (0,0)--(0.5,-0.1);
+		\draw (0.5,0)--(2.5,1.3)--(11.5,1.3)--(14.7,-0.944);
+		\draw (0.5,0)--(2.5,-1.3)--(11.5,-1.3)--(14.7,0.944);
+		\draw (-0.5,0)--(15.2,0); % axe optique
+		%\draw[thick] (7.1,1.3)--(14.7,-0.944); % rayon objet
+		%\draw[thick] (7.1,1.3)--(11.5,1.3)--(14.7,-0.944);
+		\draw[thick] (7.1,0.65)--(14.7,-0.472); % rayon objet
+		\draw[thick] (7.1,0.65)--(11.5,0.65)--(14.7,-0.472);
+		\draw (-0.7,-0.7) node {Light Source};
+		\draw (1.5,-3) node {Diaphragm + lens};
+		\draw (7,-3) node {Pendant Drop};
+		\draw (13,-3) node {Camera};
+
+	\end{tikzpicture}
+
+\end{center}
 
 \thebibliography{9}
 
 \bibitem{ImageJ} W. S. Rasband, \textit{ImageJ}, U. S. National
   Institutes of Health, Bethesda, Maryland, USA,
   \url{http://imagej.nih.gov/ij/}, 1997-2010.
-
+  
 \bibitem{FijiSite} Fiji web site: \url{http://fiji.sc/}
 
 \bibitem{Schindelin2012} J. Schindelin \textit{et al.}, \textit{Fiji: an
@@ -425,4 +479,32 @@ see references~\cite{Powell1965,Brandt1992}.
   (Mannheim, Leipzig, Wien, Zürich) 3rd edition, ISBN 3-411-03200-6
   (1992)
 
-\end{document}
+\bibitem{gamma_eau&Hg1} web site : \url{https://fr.wikipedia.org/wiki/Tension_superficielle}
+
+\bibitem{gamma_eau&Hg2} web site : \url{http://tensionsuperficielle.free.fr/tension-superficielle/}
+
+\bibitem{gamma_eau} web site : \url{http://bernard.pironin.pagesperso-orange.fr/aquatech/mat-mol.htm}
+
+\bibitem{gamma_mercury} web site : \url{https://books.google.fr/books?id=Mhg0SNJoM5gC&pg=PA5&lpg=PA5&dq=longueur+capillaire+mercure&source=bl&ots=mhTmSt060B&sig=hRzV67Ve7vVXHMAdR-efKzsKPXY&hl=fr&sa=X&ved=0CD0Q6AEwBGoVChMImKG_6ubfxgIVh2sUCh1N0QDH#v=onepage&q=longueur%20capillaire%20mercure&f=false}
+
+\bibitem{gamma_hexadecane} L. I. Rolo, A. I. Caço, A. J. Queimada, I. M. Marrucho, and J. A. P. Coutinho, \textit{Surface tension of Heptane, Decane, Hexadecane, Eicosane and Some of Their Bianary Mixtures} J. Chem. Eng. Data \textbf{47} (2002), p.~1442--1445
+
+\bibitem{rho_eau1} web site : \url{http://www.atomer.fr/1/1-densite-eau.html}
+
+\bibitem{rho_eau2} web site : \url{http://www.thermexcel.com/french/tables/eau_atm.htm}
+
+\bibitem{rho_eau3} web site : \url{http://www.econologie.com/masse-volumique-de-l-eau-et-temperature-articles-4032.html}
+
+\bibitem{rho_mercury1} web site : \url{https://fr.wikipedia.org/wiki/Mercure_%28chimie%29}
+
+\bibitem{rho_mercury2} web site : \url{http://www.engineeringtoolbox.com/mercury-d_1002.html}
+
+\bibitem{rho_mercury3} web site : \url{https://en.wikipedia.org/wiki/Mercury_%28element%29}
+
+\bibitem{rho_hexadecane1} web site : \url{https://en.wikipedia.org/wiki/Hexadecane}
+
+\bibitem{rho_hexadecane2} web site : \url{http://www.ddbst.com/en/EED/PCP/DEN_C516.php}
+
+\bibitem{rho_hexadecane3} web site : \url{http://pubchem.ncbi.nlm.nih.gov/compound/hexadecane}
+
+\end{document} 
