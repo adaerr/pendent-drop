@@ -199,7 +199,7 @@ public class Goutte_pendante implements ExtendedPlugInFilter, Runnable,
     int yDropTip;
 
 
-    java.util.Map<JButton,URI> uris = 
+    java.util.Map<JButton,URI> uris =
         new java.util.LinkedHashMap<JButton,URI>();
 
     /** Plug-in starts here. Just does basic tests.
@@ -217,7 +217,7 @@ public class Goutte_pendante implements ExtendedPlugInFilter, Runnable,
         if (IJ.versionLessThan("1.43u")) {
             IJ.error(pluginMenuName,
                      "This plug-in requires ImageJ version >= 1.43u.");
-            return DONE; 
+            return DONE;
         }
         if (imp == null) {
             IJ.noImage();
@@ -584,7 +584,7 @@ public class Goutte_pendante implements ExtendedPlugInFilter, Runnable,
                 }
                 acc /= maxValue - minValue;
                 leftBorder[y] = xl - 0.5 - voisinage + acc;
-                
+
                 minValue = Double.MAX_VALUE;
                 maxValue = Double.NEGATIVE_INFINITY;
                 for (int dx = -voisinage; dx < voisinage; dx++) {
@@ -598,7 +598,7 @@ public class Goutte_pendante implements ExtendedPlugInFilter, Runnable,
                 }
                 acc /= maxValue - minValue;
                 rightBorder[y] = xr - 0.5 + voisinage - acc;
-                
+
                 //IJ.log("y=" + y + ", xl=" + xl + ", xr=" + xr + ", count=" + count);
                 //IJ.log("right=" + rightBorder[y] + ", left=" + leftBorder[y] );
                 //ip.putPixelValue((int)rightBorder[y]+roi.x, roi.y+y, (y&1)==0 ? 255 : 0);
@@ -793,16 +793,16 @@ public class Goutte_pendante implements ExtendedPlugInFilter, Runnable,
         }
         border.closePath();
 
-		ij.gui.Roi r = new ij.gui.ShapeRoi(t.createTransformedShape(new Area(border)));
-		r.setStrokeColor(Color.blue);
-		ij.gui.Overlay o = new ij.gui.Overlay(r);
+                ij.gui.Roi r = new ij.gui.ShapeRoi(t.createTransformedShape(new Area(border)));
+                r.setStrokeColor(Color.blue);
+                ij.gui.Overlay o = new ij.gui.Overlay(r);
 
-		r = new ij.gui.ShapeRoi(t.createTransformedShape(c));
-		r.setStrokeColor(Color.red);
-		o.add(r);
-		
-		//roi.setStroke(stroke);
-		imp.setOverlay(o);
+                r = new ij.gui.ShapeRoi(t.createTransformedShape(c));
+                r.setStrokeColor(Color.red);
+                o.add(r);
+
+                //roi.setStroke(stroke);
+                imp.setOverlay(o);
     }
 
     /** Tells worker thread to quit. */
@@ -1609,7 +1609,7 @@ public class Goutte_pendante implements ExtendedPlugInFilter, Runnable,
         JPanel rootpane = new JPanel();
         rootpane.setLayout(new BoxLayout(rootpane, BoxLayout.PAGE_AXIS));
         rootpane.setBorder(BorderFactory.createEmptyBorder(5, 5, 0, 5));
-        
+
         JLabel l = new JLabel(pluginMenuName);
         Font normalFont = l.getFont();
         l.setFont(new Font(Font.SANS_SERIF, Font.BOLD,
@@ -1622,7 +1622,7 @@ public class Goutte_pendante implements ExtendedPlugInFilter, Runnable,
         Font urlFont = new Font(Font.MONOSPACED, Font.PLAIN,
                                 normalFont.getSize());
 
-        
+
         rootpane.add(new JSeparator(SwingConstants.HORIZONTAL));
 
         java.util.Map<String,String> doc = getDocumentation();
@@ -1638,7 +1638,7 @@ public class Goutte_pendante implements ExtendedPlugInFilter, Runnable,
             l.setFont(labelFont);
             //l.setAlignmentX(Component.LEFT_ALIGNMENT);
             p.add(l);
-            
+
             JPanel p2 = new JPanel();
             p2.setLayout(new BoxLayout(p2, BoxLayout.LINE_AXIS));
             p2.add(Box.createHorizontalStrut(10));
@@ -1725,9 +1725,9 @@ public class Goutte_pendante implements ExtendedPlugInFilter, Runnable,
     public static void open(URI uri) throws UnsupportedOperationException,
                                             IOException {
         if (uri.getScheme().equals("jar")) {// need to extract from jar
-            try { 
+            try {
                 URL url = uri.toURL();
-                String suffix = 
+                String suffix =
                     (new File(uri.getSchemeSpecificPart())).getName();
                 InputStream is = url.openStream();
                 //IJ.log("have stream: "+is.available());
@@ -1764,15 +1764,15 @@ public class Goutte_pendante implements ExtendedPlugInFilter, Runnable,
      * @see PlugInDoc
      */
     public java.util.Map<String,String> getDocumentation() {
-        java.util.Map<String,String> doc = 
+        java.util.Map<String,String> doc =
             new java.util.LinkedHashMap<String,String>();
-        doc.put("About", pluginMenuName+"is a Plugin"+
+        doc.put("About", pluginMenuName+" is a Plugin"+
                 "for liquid surface tension measurement.\n"+
     "This plug-in allows interactive adjustment of a theoretical profile\n"+
     "to an image of a pendant drop. An estimate of the quality of the fit\n"+
     "is logged to ImageJ's log window. The Plugin can also improve the fit\n"+
     "automatically by varying one or several of the parameters.");
-        doc.put("Usage", 
+        doc.put("Usage",
     "Draw a rectangular ROI around the free pendant part of the drop,\n"+
     "call Plugin, check 'preview' box; then adjust parameters interactively\n"+
     "and/or fit selected parameters automatically.\n"+
@@ -1784,8 +1784,8 @@ public class Goutte_pendante implements ExtendedPlugInFilter, Runnable,
                 "http://www.msc.univ-paris-diderot.fr/~daerr/");
         doc.put("Plugin update site URL",
                 "http://sites.imagej.net/Daerr/");
-        doc.put("Detailed documentation PDF file", "Goutte_pendante.pdf");
-        doc.put("Example image: water drop, JPEG file", "eauContrasteMax.jpg");
+        doc.put("Detailed documentation PDF file", "article/Goutte_pendante.pdf");
+        doc.put("Example image: water drop, JPEG file", "article/eauContrasteMax.jpg");
         return doc;
     }
 
