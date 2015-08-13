@@ -12,7 +12,9 @@ import org.scijava.plugin.Plugin;
 /**
  * Show documentation and links about the Pendant Drop plugin.
  */
-@Plugin(type = Command.class, headless = false, menuPath = "Plugins>Drop analysis>About Pendant Drop")
+@Plugin(type = Command.class,
+        headless = false,
+        menuPath = "Plugins>Drop Analysis>About Pendant Drop")
 public class About_Pendant_Drop implements Command {
 
         @Parameter(type = ItemIO.OUTPUT)

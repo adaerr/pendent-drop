@@ -35,7 +35,7 @@ import org.scijava.plugin.Plugin;
 
 /** An ImageJ2 plugin analyzing the shape of a pendant drop. */
 @Plugin(type = Command.class,
-        menuPath = "Plugins>Drop analysis>Pendant Drop")
+        menuPath = "Plugins>Drop Analysis>Pendant Drop")
 public class Goutte_pendante implements Command, Previewable {
 
         // -- Parameters --
