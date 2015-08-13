@@ -83,22 +83,19 @@ public class Goutte_pendante implements Command, Previewable {
 
         /** Tests our command. */
         public static void main(final String... args) throws Exception {
-                // Launch ImageJ as usual.
-                final ImageJ ij = net.imagej.Main.launch(args);
+            final String testImagePath = "article/eauContrasteMax.jpg";
 
-                // Create a beautiful test image.
-                long[] dims = {512, 128};
-                String name = "A spiffy blank image";
-                AxisType[] axes = {Axes.X, Axes.Y};
-                int bitsPerPixel = 8;
-                boolean signed = false;
-                boolean floating = false;
-                final Dataset dataset =
-                        ij.dataset().create(dims, name, axes, bitsPerPixel, signed, floating);
-                ij.ui().show(dataset);
+            // Launch ImageJ as usual.
+            final ImageJ ij = net.imagej.Main.launch(args);
 
-                // Launch the "CommandWithPreview" command.
-                ij.command().run(Goutte_pendante.class, true);
+            // Open test image.
+            final Dataset dataset = ij.dataset().open(testImagePath);
+
+            // display the dataset
+            ij.ui().show(dataset);
+
+            // Launch the "CommandWithPreview" command.
+            ij.command().run(Goutte_pendante.class, true);
         }
 
 }
