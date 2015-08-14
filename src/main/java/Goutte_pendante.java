@@ -94,6 +94,9 @@ public class Goutte_pendante implements Command, Previewable {
             // display the dataset
             ij.ui().show(dataset);
 
+            // create rectangular ROI
+            //imp.setRoi(120,60,340,420);
+
             // Launch the "CommandWithPreview" command.
             ij.command().run(Goutte_pendante.class, true);
         }
