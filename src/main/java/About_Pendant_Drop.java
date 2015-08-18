@@ -2,8 +2,10 @@
  * Present help information about the Pendant Drop plugin
  */
 
+import net.imagej.Dataset;
 import net.imagej.ImageJ;
 import org.scijava.log.LogService;
+import org.scijava.ui.UIService;
 
 import org.scijava.ItemIO;
 import org.scijava.command.Command;
@@ -44,6 +46,13 @@ import javax.swing.BorderFactory;
         headless = false,
         menuPath = "Plugins>Drop Analysis>About Pendant Drop")
 public class About_Pendant_Drop implements Command, ActionListener {
+
+    // needed to open images
+    @Parameter
+    private UIService ui;
+
+    @Parameter
+    private org.scijava.io.IOService ioService;
 
     @Parameter
     private LogService logger;
@@ -149,6 +158,38 @@ public class About_Pendant_Drop implements Command, ActionListener {
                 } else
                     logger.error("could not locate resource "+key+" at\n\""+
                            doc.get(key)+"\"\n");
+            } else if (key.toLowerCase(java.util.Locale.ENGLISH).endsWith("image")) {
+                URL u = getClass().getResource(doc.get(key));
+                if (u != null) {
+                    try {
+                        URI uri = u.toURI();
+                        JButton b = new JButton(uri.toString());
+                        uris.put(b, uri);
+                        b.addActionListener(new ActionListener() {
+                                public void actionPerformed(ActionEvent e) {
+                                    Object source = e.getSource();
+                                    if (!(source instanceof JButton)) return;
+                                    JButton button = (JButton)source;
+                                    if ( uris.containsKey(button) ) {
+                                        URI uri = uris.get(source);
+                                        try {
+                                            openSciJava(uri);
+                                        } catch (IOException x) {
+                                            logger.error(x);
+                                        }
+                                    }
+                                }
+                            });
+                        b.setFont(urlFont);
+                        p2.add(b);
+                    }
+                    catch (URISyntaxException e) {
+                        logger.error("cast of \""+u+"\" to URI failed");
+                    }
+                } else
+                    logger.error("could not locate resource "+key+" at\n\""+
+                           doc.get(key)+"\"\n");
+
             } else {
                 JEditorPane text = new JEditorPane("text/plain", doc.get(key));
                 text.setEditable(false);
@@ -179,7 +220,7 @@ public class About_Pendant_Drop implements Command, ActionListener {
         if (button == null) return;
         if ( uris.containsKey(button) ) {
             URI uri = uris.get(source);
-            try { open(uri); }
+            try { openDesktop(uri); }
             catch (UnsupportedOperationException ex) {
                 logger.error("opening "+ uri.toString() +" failed:\n" + ex);
             }
@@ -198,31 +239,11 @@ public class About_Pendant_Drop implements Command, ActionListener {
      * @throws IOException The documentation of desktop.browse()
      * described under which circumstances this Exception is thrown.
      */
-    public void open(URI uri) throws UnsupportedOperationException,
+    public void openDesktop(URI uri) throws UnsupportedOperationException,
                                             IOException {
-        if (uri.getScheme().equals("jar")) {// need to extract from jar
-            try {
-                URL url = uri.toURL();
-                String suffix =
-                    (new File(uri.getSchemeSpecificPart())).getName();
-                InputStream is = url.openStream();
-                //logger.debug("have stream: "+is.available());
-                File tmpFile = File.createTempFile("gpp",suffix);
-                tmpFile.deleteOnExit();
-                FileOutputStream os = new FileOutputStream(tmpFile);
-                while (true) {
-                    int b = is.read();
-                    if (b < 0) break;
-                    os.write(b);
-                }
-                is.close();
-                uri = tmpFile.toURI();
-                os.close();
-            } catch (IOException e) {
-                logger.error("IOException while extracting from jar...\n"+e);
-                e.printStackTrace();
-            }
-        }
+        if (uri.getScheme().equals("jar")) // need to extract from jar
+            uri = jarURItoTmpFileURI(uri);
+
         if (!java.awt.Desktop.isDesktopSupported())
             throw new UnsupportedOperationException("Desktop is not supported");
 
@@ -234,6 +255,47 @@ public class About_Pendant_Drop implements Command, ActionListener {
         desktop.browse(uri);
     }
 
+    /** Open URI using SciJava.
+     *
+     * @throws IOException Thrown by org.scijava.io.IOService
+     */
+    public void openSciJava(URI uri) throws IOException {
+        if (uri.getScheme().equals("jar")) // need to extract from jar
+            uri = jarURItoTmpFileURI(uri);
+
+        // Open using appropriate plugin.
+        final Dataset dataset = (Dataset)ioService.open(uri.toString());
+
+        // display the dataset
+        ui.show(dataset);
+    }
+
+    public URI jarURItoTmpFileURI(URI uri) {
+        if (!uri.getScheme().equals("jar"))
+            return uri; // do nothing if not in jar
+        try {
+            URL url = uri.toURL();
+            String suffix =
+                (new File(uri.getSchemeSpecificPart())).getName();
+            InputStream is = url.openStream();
+            //logger.debug("have stream: "+is.available());
+            File tmpFile = File.createTempFile("gpp",suffix);
+            tmpFile.deleteOnExit();
+            FileOutputStream os = new FileOutputStream(tmpFile);
+            while (true) {
+                int b = is.read();
+                if (b < 0) break;
+                os.write(b);
+            }
+            is.close();
+            uri = tmpFile.toURI();
+            os.close();
+        } catch (IOException e) {
+            logger.error("IOException while extracting from jar...");
+            logger.error(e);
+        }
+        return uri;
+    }
 
     /** Documents this plug-in using the PlugInDoc interface.
      *
@@ -261,7 +323,7 @@ public class About_Pendant_Drop implements Command, ActionListener {
         doc.put("Plugin update site URL",
                 "http://sites.imagej.net/Daerr/");
         doc.put("Detailed documentation PDF file", "article/Goutte_pendante.pdf");
-        doc.put("Example image: water drop, JPEG file", "article/eauContrasteMax.jpg");
+        doc.put("Example image: water drop, JPEG image", "article/eauContrasteMax.jpg");
         return doc;
     }
 
