@@ -213,11 +213,8 @@ public class About_Pendant_Drop implements Command, ActionListener {
     /** From the ActionListener interface */
     public void actionPerformed(ActionEvent e) {
         Object source = e.getSource();
-        JButton button = null;
-        if (source instanceof JButton) {
-            button = (JButton)source;
-        }
-        if (button == null) return;
+        if (!(source instanceof JButton)) return;
+        JButton button = (JButton)source;
         if ( uris.containsKey(button) ) {
             URI uri = uris.get(source);
             try { openDesktop(uri); }
