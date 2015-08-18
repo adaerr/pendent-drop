@@ -3,11 +3,39 @@
  */
 
 import net.imagej.ImageJ;
+import org.scijava.log.LogService;
 
 import org.scijava.ItemIO;
 import org.scijava.command.Command;
 import org.scijava.plugin.Parameter;
 import org.scijava.plugin.Plugin;
+
+import java.awt.event.ActionListener;
+import java.awt.event.ActionEvent;
+import java.awt.BorderLayout;
+import java.awt.Component;
+import java.awt.Dimension;
+import java.awt.Font;
+
+import java.net.URI;
+import java.net.URL;
+import java.net.URISyntaxException;
+import java.io.InputStream;
+import java.io.FileOutputStream;
+import java.io.File;
+import java.io.IOException;
+
+import javax.swing.JEditorPane;
+import javax.swing.JFrame;
+import javax.swing.JPanel;
+import javax.swing.JScrollPane;
+import javax.swing.JSeparator;
+import javax.swing.JButton;
+import javax.swing.JLabel;
+import javax.swing.SwingConstants;
+import javax.swing.Box;
+import javax.swing.BoxLayout;
+import javax.swing.BorderFactory;
 
 /**
  * Show documentation and links about the Pendant Drop plugin.
@@ -15,44 +43,253 @@ import org.scijava.plugin.Plugin;
 @Plugin(type = Command.class,
         headless = false,
         menuPath = "Plugins>Drop Analysis>About Pendant Drop")
-public class About_Pendant_Drop implements Command {
+public class About_Pendant_Drop implements Command, ActionListener {
 
-        @Parameter(type = ItemIO.OUTPUT)
-        private String about;
+    @Parameter
+    private LogService logger;
 
-        /**
-         * Produce help string.
-         */
-        @Override
-        public void run() {
-                about = "Here's your documentation !";
+    private final static String pluginMenuName = "Pendant drop";
+
+    private final java.util.Map<JButton,URI> uris =
+        new java.util.LinkedHashMap<JButton,URI>();
+
+    /**
+     * Show help window.
+     */
+    @Override
+    public void run() {
+        showAbout();
+    }
+
+    public void showAbout() {
+        //Create and set up the window.
+        JFrame aboutWin = new JFrame("PlugIn Doc Browser");
+        aboutWin.setDefaultCloseOperation(JFrame.DISPOSE_ON_CLOSE);
+
+        //Add scroll-pane
+        JPanel p = new JPanel();
+        p.setLayout(new BoxLayout(p, BoxLayout.PAGE_AXIS));
+        p.setBorder(BorderFactory.createLoweredBevelBorder());
+        p.setPreferredSize(new Dimension(800, 700));
+
+        //Add small vertical space
+        //p.add(Box.createRigidArea(new Dimension(0,5)));
+        JScrollPane scrollPane = new JScrollPane();
+        scrollPane.setAlignmentX(Component.LEFT_ALIGNMENT);
+        p.add(scrollPane);
+
+        aboutWin.add(p, BorderLayout.PAGE_START);
+
+        // and add rest into the scrollpane
+
+        JPanel rootpane = new JPanel();
+        rootpane.setLayout(new BoxLayout(rootpane, BoxLayout.PAGE_AXIS));
+        rootpane.setBorder(BorderFactory.createEmptyBorder(5, 5, 0, 5));
+
+        JLabel l = new JLabel(pluginMenuName);
+        Font normalFont = l.getFont();
+        l.setFont(new Font(Font.SANS_SERIF, Font.BOLD,
+                           normalFont.getSize()*7/5));
+        l.setBorder(BorderFactory.createEmptyBorder(10, 20, 10, 20));
+        rootpane.add(l);
+
+        Font labelFont = normalFont.deriveFont(Font.ITALIC,
+                                               normalFont.getSize());
+        Font urlFont = new Font(Font.MONOSPACED, Font.PLAIN,
+                                normalFont.getSize());
+
+
+        rootpane.add(new JSeparator(SwingConstants.HORIZONTAL));
+
+        java.util.Map<String,String> doc = getDocumentation();
+
+        // extract all dictionary entries to one single page
+        for (String key: doc.keySet()) {
+            p = new JPanel();
+            p.setLayout(new BoxLayout(p, BoxLayout.PAGE_AXIS));
+            p.setBorder(BorderFactory.createEmptyBorder(5, 5, 0, 5));
+            //p.setAlignmentX(Component.LEFT_ALIGNMENT);
+
+            l = new JLabel(key);
+            l.setFont(labelFont);
+            //l.setAlignmentX(Component.LEFT_ALIGNMENT);
+            p.add(l);
+
+            JPanel p2 = new JPanel();
+            p2.setLayout(new BoxLayout(p2, BoxLayout.LINE_AXIS));
+            p2.add(Box.createHorizontalStrut(10));
+            p2.setAlignmentX(Component.LEFT_ALIGNMENT);
+
+            if (key.endsWith("URI") || key.endsWith("URL")) {
+                try {
+                    URI uri = new URI(doc.get(key));
+                    JButton b = new JButton(uri.toString());
+                    uris.put(b, uri);
+                    b.addActionListener(this);
+                    b.setFont(urlFont);
+                    p2.add(b);
+                }
+                catch (URISyntaxException e) {
+                    logger.error("cast of \""+doc.get(key)+"\" to URI failed");
+                }
+            } else if (key.toLowerCase(java.util.Locale.ENGLISH).endsWith("file")) {
+                URL u = getClass().getResource(doc.get(key));
+                if (u != null) {
+                    try {
+                        URI uri = u.toURI();
+                        JButton b = new JButton(uri.toString());
+                        uris.put(b, uri);
+                        b.addActionListener(this);
+                        b.setFont(urlFont);
+                        p2.add(b);
+                    }
+                    catch (URISyntaxException e) {
+                        logger.error("cast of \""+u+"\" to URI failed");
+                    }
+                } else
+                    logger.error("could not locate resource "+key+" at\n\""+
+                           doc.get(key)+"\"\n");
+            } else {
+                JEditorPane text = new JEditorPane("text/plain", doc.get(key));
+                text.setEditable(false);
+                //text.setAlignmentX(Component.LEFT_ALIGNMENT);
+                p2.add(text);
+            }
+
+            p.add(p2);
+            p.add(Box.createVerticalStrut(5));
+            p.add(new JSeparator(SwingConstants.HORIZONTAL));
+            rootpane.add(p);
         }
 
-        /**
-         * A {@code main()} method for testing (from IJ's Hello_World
-         * example).
-         * <p>
-         * When developing a plugin in an Integrated Development
-         * Environment (such as Eclipse or NetBeans), it is most
-         * convenient to provide a simple {@code main()} method that
-         * creates an ImageJ context and calls the plugin. </p>
-         * <p>
-         * In particular, this comes in handy when one needs to debug
-         * the plugin: after setting one or more breakpoints and
-         * populating the inputs (e.g. by calling something like
-         * {@code ij.command().run(MyPlugin.class, "inputImage", myImage)}
-         * where {@code inputImage} is the name of the field
-         * specifying the input) debugging becomes a breeze.
-         * </p>
-         *
-         * @param args unused
-         */
-        public static void main(final String... args) {
-                // Launch ImageJ as usual.
-                final ImageJ ij = net.imagej.Main.launch(args);
+        scrollPane.setViewportView(rootpane);
 
-                // Launch our command right away.
-                ij.command().run(About_Pendant_Drop.class, true);
+        //Display the window.
+        aboutWin.pack();
+        aboutWin.setVisible(true);
+    }
+
+    /** From the ActionListener interface */
+    public void actionPerformed(ActionEvent e) {
+        Object source = e.getSource();
+        JButton button = null;
+        if (source instanceof JButton) {
+            button = (JButton)source;
         }
+        if (button == null) return;
+        if ( uris.containsKey(button) ) {
+            URI uri = uris.get(source);
+            try { open(uri); }
+            catch (UnsupportedOperationException ex) {
+                logger.error("opening "+ uri.toString() +" failed:\n" + ex);
+            }
+            catch (IOException ex) {
+                logger.error("opening "+ uri.toString() +" failed:\n" + ex);
+            }
+        }
+    }
+
+    /** Open URI with default desktop application.
+     *
+     * @throws UnsupportedOperationException Either
+     * java.awt.Desktop.isDesktopSupported() or desktop.isSupported(
+     * java.awt.Desktop.Action.BROWSE ) returned false.
+     *
+     * @throws IOException The documentation of desktop.browse()
+     * described under which circumstances this Exception is thrown.
+     */
+    public void open(URI uri) throws UnsupportedOperationException,
+                                            IOException {
+        if (uri.getScheme().equals("jar")) {// need to extract from jar
+            try {
+                URL url = uri.toURL();
+                String suffix =
+                    (new File(uri.getSchemeSpecificPart())).getName();
+                InputStream is = url.openStream();
+                //logger.debug("have stream: "+is.available());
+                File tmpFile = File.createTempFile("gpp",suffix);
+                tmpFile.deleteOnExit();
+                FileOutputStream os = new FileOutputStream(tmpFile);
+                while (true) {
+                    int b = is.read();
+                    if (b < 0) break;
+                    os.write(b);
+                }
+                is.close();
+                uri = tmpFile.toURI();
+                os.close();
+            } catch (IOException e) {
+                logger.error("IOException while extracting from jar...\n"+e);
+                e.printStackTrace();
+            }
+        }
+        if (!java.awt.Desktop.isDesktopSupported())
+            throw new UnsupportedOperationException("Desktop is not supported");
+
+        java.awt.Desktop desktop = java.awt.Desktop.getDesktop();
+
+        if (!desktop.isSupported( java.awt.Desktop.Action.BROWSE ))
+            throw new UnsupportedOperationException("Desktop doesn't support the browse action");
+
+        desktop.browse(uri);
+    }
+
+
+    /** Documents this plug-in using the PlugInDoc interface.
+     *
+     * @see PlugInDoc
+     */
+    public java.util.Map<String,String> getDocumentation() {
+        java.util.Map<String,String> doc =
+            new java.util.LinkedHashMap<String,String>();
+        doc.put("About", pluginMenuName+" is a Plugin"+
+                "for liquid surface tension measurement.\n"+
+    "This plug-in allows interactive adjustment of a theoretical profile\n"+
+    "to an image of a pendant drop. An estimate of the quality of the fit\n"+
+    "is logged to ImageJ's log window. The Plugin can also improve the fit\n"+
+    "automatically by varying one or several of the parameters.");
+        doc.put("Usage",
+    "Draw a rectangular ROI around the free pendant part of the drop,\n"+
+    "call Plugin, check 'preview' box; then adjust parameters interactively\n"+
+    "and/or fit selected parameters automatically.\n"+
+    "[For more details see PDF documentation below]");
+        doc.put("Author", "Adrian Daerr");
+        doc.put("Version", "2015-09-01");
+        doc.put("Licence", "GPL");
+        doc.put("Author homepage URL",
+                "http://www.msc.univ-paris-diderot.fr/~daerr/");
+        doc.put("Plugin update site URL",
+                "http://sites.imagej.net/Daerr/");
+        doc.put("Detailed documentation PDF file", "article/Goutte_pendante.pdf");
+        doc.put("Example image: water drop, JPEG file", "article/eauContrasteMax.jpg");
+        return doc;
+    }
+
+    /**
+     * A {@code main()} method for testing (from IJ's Hello_World
+     * example).
+     * <p>
+     * When developing a plugin in an Integrated Development
+     * Environment (such as Eclipse or NetBeans), it is most
+     * convenient to provide a simple {@code main()} method that
+     * creates an ImageJ context and calls the plugin. </p>
+     * <p>
+     * In particular, this comes in handy when one needs to debug
+     * the plugin: after setting one or more breakpoints and
+     * populating the inputs (e.g. by calling something like
+     * {@code ij.command().run(MyPlugin.class, "inputImage", myImage)}
+     * where {@code inputImage} is the name of the field
+     * specifying the input) debugging becomes a breeze.
+     * </p>
+     *
+     * @param args unused
+     */
+    public static void main(final String... args) {
+        // Launch ImageJ as usual.
+        final ImageJ ij = net.imagej.Main.launch(args);
+
+        // Launch our command right away.
+        ij.command().run(About_Pendant_Drop.class, true);
+    }
 
 }
