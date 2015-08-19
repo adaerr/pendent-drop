@@ -19,86 +19,121 @@
  * difference is given.
  *
  * For more information see the included PDF documentation
- * (Help->About plugins->Pendant drop)
+ * (Plugins -> Drop Analysis -> About Pendant Drop)
  */
+
+import java.util.ArrayList;
+import java.util.List;
 
 import ij.ImagePlus;
 import net.imagej.Dataset;
 import net.imagej.ImageJ;
 import net.imagej.axis.Axes;
 import net.imagej.axis.AxisType;
+import net.imagej.display.ImageDisplay;
+import net.imagej.overlay.Overlay;
+import net.imagej.overlay.RectangleOverlay;
 
 import org.scijava.command.Command;
 import org.scijava.command.Previewable;
+import org.scijava.io.DefaultIOService;
+import org.scijava.io.IOService;
+import org.scijava.log.LogService;
 import org.scijava.plugin.Parameter;
 import org.scijava.plugin.Plugin;
+import org.scijava.service.ServiceHelper;
+import org.scijava.util.Colors;
 
 /** An ImageJ2 plugin analyzing the shape of a pendant drop. */
 @Plugin(type = Command.class,
         menuPath = "Plugins>Drop Analysis>Pendant Drop")
 public class Goutte_pendante implements Command, Previewable {
 
-        // -- Parameters --
+    // -- Parameters --
 
-        @Parameter
-        private ImagePlus imp;
+    @Parameter
+    private ImagePlus imp;
 
-        @Parameter(persist = false, initializer = "initTitle")
-        private String title;
+    @Parameter(persist = false, initializer = "initTitle")
+    private String title;
 
-        // -- Other fields --
+    @Parameter
+    private LogService log;
 
-        /** The original title of the image. */
-        private String initialTitle;
+    // -- Other fields --
 
-        // -- Command methods --
+    /** The original title of the image. */
+    private String initialTitle;
 
-        @Override
-        public void run() {
-                // Set the image's title to the specified value.
-                imp.setTitle(title);
-        }
+    // -- Command methods --
 
-        // -- Previewable methods --
+    @Override
+    public void run() {
+        // Set the image's title to the specified value.
+        imp.setTitle(title);
+        log.info("roi: "+imp.getProcessor().getRoi());
+    }
 
-        @Override
-        public void preview() {
-                run();
-        }
+    // -- Previewable methods --
 
-        @Override
-        public void cancel() {
-                // Set the image's title back to the original value.
-                imp.setTitle(initialTitle);
-        }
+    @Override
+    public void preview() {
+        run();
+    }
 
-        // -- Initializer methods --
+    @Override
+    public void cancel() {
+        // Set the image's title back to the original value.
+        imp.setTitle(initialTitle);
+    }
 
-        /** Initializes the {@link #title} parameter. */
-        protected void initTitle() {
-                title = initialTitle = imp.getTitle();
-        }
+    // -- Initializer methods --
 
-        // -- Main method --
+    /** Initializes the {@link #title} parameter. */
+    protected void initTitle() {
+        title = initialTitle = imp.getTitle();
+    }
 
-        /** Tests our command. */
-        public static void main(final String... args) throws Exception {
-            final String testImagePath = "article/eauContrasteMax.jpg";
+    // -- Main method --
 
-            // Launch ImageJ as usual.
-            final ImageJ ij = net.imagej.Main.launch(args);
+    /** Tests our command. */
+    public static void main(final String... args) throws Exception {
+        final String testImagePath = "/home/adrian/Programmes/plugins_ImageJ_src/Traitement_Gouttes/src/main/resources/article/eauContrasteMax.jpg";
 
-            // Open test image.
-            final Dataset dataset = ij.dataset().open(testImagePath);
+        // Launch ImageJ as usual.
+        //final ImageJ ij = net.imagej.Main.launch(args);
+        final ImageJ ij = new ImageJ();
+        //ij.ui().showUI();
+        ij.ui().showUI("swing");
 
-            // display the dataset
-            ij.ui().show(dataset);
+        // Open test image.
+        final ServiceHelper sh = new ServiceHelper(ij.getContext());
+        final IOService io = sh.loadService(DefaultIOService.class);
+        final Dataset dataset = (Dataset) io.open(testImagePath);
 
-            // create rectangular ROI
-            //imp.setRoi(120,60,340,420);
+        // create a display for the dataset
+        final ImageDisplay imageDisplay =
+            (ImageDisplay) ij.display().createDisplay(dataset);
 
-            // Launch the "CommandWithPreview" command.
-            ij.command().run(Goutte_pendante.class, true);
-        }
+        // create a rectangle
+        final RectangleOverlay rectangle = new RectangleOverlay(ij.getContext());
+        rectangle.setOrigin(110, 0);
+        rectangle.setOrigin(60, 1);
+        rectangle.setExtent(340, 0);
+        rectangle.setExtent(420, 1);
+        rectangle.setLineColor(Colors.HONEYDEW);
+        rectangle.setLineWidth(1);
+
+        // add the overlays to the display
+        final List<Overlay> overlays = new ArrayList<Overlay>();
+        overlays.add(rectangle);
+        ij.overlay().addOverlays(imageDisplay, overlays);
+
+        // display the dataset
+        ij.ui().show(imageDisplay);
+
+        // Launch the "CommandWithPreview" command.
+        ij.command().run(Goutte_pendante.class, true);
+    }
 
 }
