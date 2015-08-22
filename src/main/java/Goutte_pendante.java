@@ -50,7 +50,8 @@ import org.scijava.util.Colors;
 
 /** An ImageJ2 plugin analyzing the shape of a pendant drop. */
 @Plugin(type = Command.class,
-        menuPath = "Plugins>Drop Analysis>Pendant Drop")
+        menuPath = "Plugins>Drop Analysis>Pendant Drop",
+        initializer = "paramEstimator")
 public class Goutte_pendante implements Command, Previewable {
 
     // -- Parameters --
@@ -68,11 +69,32 @@ public class Goutte_pendante implements Command, Previewable {
     // Double.toString(Double.MIN_VALUE) is not a constant to the
     // compiler, so we use an explicit value close to the real
     // constant
-    @Parameter(persist = false, initializer = "initTipRadius", label = "tip_radius of curvature", min = "1e-300")
+    @Parameter(persist = false, label = "tip_radius of curvature", min = "1e-300")
     private double tip_radius;
 
-    @Parameter(persist = false, initializer = "initCapillaryLength", label = "capillary length", min = "1e-300")
+    @Parameter(persist = false, label = "capillary length", min = "1e-300")
     private double capillary_length;
+
+    @Parameter(persist = false, label = "tip_x coordinate")
+    private double tip_x;
+
+    @Parameter(persist = false, label = "tip_y coordinate")
+    private double tip_y;
+
+    @Parameter(persist = false, label = "gravity angle (deg)")
+    private double gravity_deg;
+
+    @Parameter(persist = false, initializer = "initPixelSize")
+    private double pixel_size;
+
+    @Parameter(label = "density contrast times g")
+    private double rho_g;
+
+    @Parameter(visibility = org.scijava.ItemVisibility.MESSAGE)
+    private final String label_surface_tension = "Surface tension";
+
+    @Parameter(persist = false, visibility = org.scijava.ItemVisibility.MESSAGE, label = "Surface tension")
+    private double surface_tension = 0;
 
     // -- Other fields --
 
@@ -102,6 +124,7 @@ public class Goutte_pendante implements Command, Previewable {
     @Override
     public void preview() {
         updateOverlay();
+        surface_tension ++;
     }
 
     @Override
@@ -111,14 +134,22 @@ public class Goutte_pendante implements Command, Previewable {
 
     // -- Initializer methods --
 
-    /** Initializes the {@link #tip_radius} parameter. */
-    protected void initTipRadius() {
-        tip_radius = 1;
+    /** Initializes some parameters by roughly analyzing the image.
+     * The corresponding parameters are: {@link #tip_radius},
+     * {@link #capillary_length}, {@link #tip_x}, {@link #tip_y},
+     * {@link #gravity_deg}
+     */
+    protected void paramEstimator() {
+        tip_radius = 42;
+        capillary_length = 43;
+        tip_x = 44;
+        tip_y = 45;
+        gravity_deg = 0;
     }
 
-    /** Initializes the {@link #capillary_length} parameter. */
-    protected void initCapillaryLength() {
-        capillary_length = 2;
+    /** Initializes the {@link #pixel_size} parameter. */
+    protected void initPixelSize() {
+        pixel_size = 1;
     }
 
     // -- Processing --
