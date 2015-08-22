@@ -24,8 +24,12 @@
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.HashMap;
 
 import ij.ImagePlus;
+import ij.ImageStack;
+import ij.process.ImageProcessor;
+
 import net.imagej.Dataset;
 import net.imagej.ImageJ;
 import net.imagej.axis.Axes;
@@ -54,57 +58,89 @@ public class Goutte_pendante implements Command, Previewable {
     @Parameter
     private ImagePlus imp;
 
-    @Parameter(persist = false, initializer = "initTitle")
-    private String title;
-
     @Parameter
     private LogService log;
 
+    @Parameter(persist = false)
+    private RectangleOverlay dropRegion;
+
+    // The 'min' attribute requires a String, but
+    // Double.toString(Double.MIN_VALUE) is not a constant to the
+    // compiler, so we use an explicit value close to the real
+    // constant
+    @Parameter(persist = false, initializer = "initTipRadius", label = "tip_radius of curvature", min = "1e-300")
+    private double tip_radius;
+
+    @Parameter(persist = false, initializer = "initCapillaryLength", label = "capillary length", min = "1e-300")
+    private double capillary_length;
+
     // -- Other fields --
 
-    /** The original title of the image. */
-    private String initialTitle;
+    /** The dimensional parameters. */
+    //private HashMap paramWithDim = null;
 
     // -- Command methods --
 
     @Override
     public void run() {
-        // Set the image's title to the specified value.
-        imp.setTitle(title);
-        log.info("roi: "+imp.getProcessor().getRoi());
+        log.info("drop region: +" + dropRegion.getOrigin(0)
+                 + " +" + dropRegion.getOrigin(1)
+                 + ", " + dropRegion.getExtent(0)
+                 + " x " + dropRegion.getExtent(1));
+
+        ImageStack stack = imp.getStack();
+        // create results table
+
+        for (int n=0; n<stack.getSize(); n++) {
+            analyseImage(stack.getProcessor(n+1));
+            // copy parameters into results table
+        }
     }
 
     // -- Previewable methods --
 
     @Override
     public void preview() {
-        run();
+        updateOverlay();
     }
 
     @Override
     public void cancel() {
-        // Set the image's title back to the original value.
-        imp.setTitle(initialTitle);
+        log.info("cancelled");
     }
 
     // -- Initializer methods --
 
-    /** Initializes the {@link #title} parameter. */
-    protected void initTitle() {
-        title = initialTitle = imp.getTitle();
+    /** Initializes the {@link #tip_radius} parameter. */
+    protected void initTipRadius() {
+        tip_radius = 1;
+    }
+
+    /** Initializes the {@link #capillary_length} parameter. */
+    protected void initCapillaryLength() {
+        capillary_length = 2;
+    }
+
+    // -- Processing --
+
+    public void updateOverlay() {
+        log.info("updating overlay");
+    }
+
+    public void analyseImage(ImageProcessor ip) {
+        log.info("processing ip: "+ip.toString());
     }
 
     // -- Main method --
 
     /** Tests our command. */
     public static void main(final String... args) throws Exception {
-        final String testImagePath = "/home/adrian/Programmes/plugins_ImageJ_src/Traitement_Gouttes/src/main/resources/article/eauContrasteMax.jpg";
+        final String testImagePath = "/home/adrian/Programmes/plugins_ImageJ_src/Traitement_Gouttes/src/test/resources/eauContrasteMaxStack.tif";
 
         // Launch ImageJ as usual.
         //final ImageJ ij = net.imagej.Main.launch(args);
         final ImageJ ij = new ImageJ();
-        //ij.ui().showUI();
-        ij.ui().showUI("swing");
+        ij.ui().showUI();
 
         // Open test image.
         final ServiceHelper sh = new ServiceHelper(ij.getContext());
