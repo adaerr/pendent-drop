@@ -23,6 +23,7 @@
  */
 
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.List;
 import java.util.HashMap;
 
@@ -35,6 +36,7 @@ import net.imagej.ImageJ;
 import net.imagej.axis.Axes;
 import net.imagej.axis.AxisType;
 import net.imagej.display.ImageDisplay;
+import net.imagej.display.OverlayService;
 import net.imagej.overlay.Overlay;
 import net.imagej.overlay.RectangleOverlay;
 
@@ -47,11 +49,14 @@ import org.scijava.plugin.Parameter;
 import org.scijava.plugin.Plugin;
 import org.scijava.service.ServiceHelper;
 import org.scijava.util.Colors;
+import org.scijava.util.IntRect;
+import org.scijava.util.RealRect;
 
-/** An ImageJ2 plugin analyzing the shape of a pendant drop. */
+/** An ImageJ2 plugin analyzing the shape of a pendant drop.
+ */
 @Plugin(type = Command.class,
         menuPath = "Plugins>Drop Analysis>Pendant Drop",
-        initializer = "paramEstimator")
+        initializer = "paramInitializer")
 public class Goutte_pendante implements Command, Previewable {
 
     // -- Parameters --
@@ -60,10 +65,13 @@ public class Goutte_pendante implements Command, Previewable {
     private ImagePlus imp;
 
     @Parameter
+    private ImageDisplay display;
+
+    @Parameter
     private LogService log;
 
-    @Parameter(persist = false)
-    private RectangleOverlay dropRegion;
+    @Parameter
+    private OverlayService overlayService;
 
     // The 'min' attribute requires a String, but
     // Double.toString(Double.MIN_VALUE) is not a constant to the
@@ -84,7 +92,7 @@ public class Goutte_pendante implements Command, Previewable {
     @Parameter(persist = false, label = "gravity angle (deg)")
     private double gravity_deg;
 
-    @Parameter(persist = false, initializer = "initPixelSize")
+    @Parameter(persist = false, initializer = "initPixelSize", min = "1e-300")
     private double pixel_size;
 
     @Parameter(label = "density contrast times g")
@@ -101,15 +109,36 @@ public class Goutte_pendante implements Command, Previewable {
     /** The dimensional parameters. */
     //private HashMap paramWithDim = null;
 
+    /** A rectangle representation of dropRegion with integer precision. */
+    private IntRect bounds;
+
+    /** Arrays containing x coordinates of the drop interface. */
+    private double[] leftBorder;
+    private double[] rightBorder;
+
+    // -- Constants --
+
+    /** Threshold defining drop interface.
+     *
+     * This should depend on the image type. For types other than 8bpp
+     * something like (min+max)/2 could be more appropriate. TODO:
+     * migrate to parameters and initialize adequately.
+     */
+    final double threshold = 128.f;
+
+    /** Number of pixels around border to include in refined interface
+     * detection.
+     */
+    final int voisinage = 10;
+
+    /** Neighbourhood of tip for curvature estimation in dropShapeEstimator().
+     */
+    final int tipNeighbourhood = 5;
+
     // -- Command methods --
 
     @Override
     public void run() {
-        log.info("drop region: +" + dropRegion.getOrigin(0)
-                 + " +" + dropRegion.getOrigin(1)
-                 + ", " + dropRegion.getExtent(0)
-                 + " x " + dropRegion.getExtent(1));
-
         ImageStack stack = imp.getStack();
         // create results table
 
@@ -139,17 +168,189 @@ public class Goutte_pendante implements Command, Previewable {
      * {@link #capillary_length}, {@link #tip_x}, {@link #tip_y},
      * {@link #gravity_deg}
      */
-    protected void paramEstimator() {
-        tip_radius = 42;
-        capillary_length = 43;
-        tip_x = 44;
-        tip_y = 45;
-        gravity_deg = 0;
+    protected void paramInitializer() {
+        // get selection bounds as rectangle
+        RealRect r = overlayService.getSelectionBounds(display);
+        bounds = new IntRect((int) Math.round(r.x),
+                             (int) Math.round(r.y),
+                             (int) Math.round(r.width),
+                             (int) Math.round(r.height));
+        log.info("drop region: +" + bounds.x + " +" +  r.y
+                 + ", " +  r.width + " x " + r.height);
+
+        // pixel size and density contrast parameters
+        ij.measure.Calibration cal = imp.getCalibration();
+        if (cal.scaled()) {
+            pixel_size = cal.pixelWidth;
+            rho_g = 9.81;
+        } else {
+            pixel_size = 1;
+            rho_g = 1;
+        }
+
+        // parameters caracterizing the drop shape
+        dropShapeEstimator(imp.getProcessor());
     }
 
-    /** Initializes the {@link #pixel_size} parameter. */
+    /** Analyze given image to roughly estimate drop shape descriptors. */
+    protected void dropShapeEstimator(ImageProcessor ip) {
+
+        findDropBorders(ip);
+        int tip = leftBorder.length - 1;
+
+        // tip curvature: linear fit to half width squared near tip
+        double[] radiusSquare = new double[tipNeighbourhood];
+        double[] yCoord = new double[tipNeighbourhood];
+        for (int i=0; i<tipNeighbourhood; i++) {
+            double halfWidth = 0.5*( rightBorder[tip-i] - leftBorder[tip-i] );
+            radiusSquare[i] = halfWidth * halfWidth;
+            yCoord[i] = i;
+        }
+        Polynome tipFit = linearFit(yCoord, radiusSquare);
+        tip_radius = 0.5 * Math.abs(tipFit.getCoeff(1)) * pixel_size;
+
+        // direction of gravity: tilt of center line
+        //
+        // link middle of top line to estimated center of drop
+        // (one radius above tip)
+        final double dX = 0.5*( rightBorder[0] + leftBorder[0]
+                                - rightBorder[tip] - leftBorder[tip] );
+        final double dY = tip - tip_radius / pixel_size;
+        final double tiltAngleRad = Math.atan2(-dX,dY);
+        gravity_deg = tiltAngleRad*180/Math.PI;
+
+        // drop tip
+        tip_x = bounds.x +
+            0.5*( rightBorder[tip] + leftBorder[tip] ) * pixel_size;
+        tip_y = bounds.y +
+            tip + tipFit.getCoeff(0) / tipFit.getCoeff(1) * pixel_size;
+        // the former expression assumes the drop is vertical, but we can
+        // correct for tilt:
+        tip_x -= tip_radius * Math.sin(tiltAngleRad);
+        tip_y -= tip_radius * (1 - Math.cos(tiltAngleRad));
+
+        // capillary length: from curvature difference between tip
+        // (=1/tip_radius) and the point of maximum horizontal drop
+        // diameter (to be calculated here)
+
+        final int bellyNeighbourhood = tip/8;// fit on up to twice
+        // these many points
+
+        // find maximum horizontal extent of drop
+        int yBelly = tip;
+        for (int i=1; i < tip; i++) {
+            double hDiam = rightBorder[tip-i] - leftBorder[tip-i];
+            if (Double.isNaN(hDiam)) continue;
+            if (hDiam > rightBorder[yBelly] - leftBorder[yBelly])
+                yBelly = tip-i;
+        }
+        // define neighbourhood for fit
+        if (yBelly < bellyNeighbourhood)// too close to top;
+            yBelly = bellyNeighbourhood;
+        int yBelow = yBelly - bellyNeighbourhood;
+        int yAbove = Math.min(tip, yBelly + bellyNeighbourhood);
+        double[] xB = new double[yAbove - yBelow + 1];
+        for (int i = yBelow; i <= yAbove; i++)
+            xB[i-yBelow] = 0.5 * (rightBorder[i] - leftBorder[i]);
+        double[] yB = new double[yAbove - yBelow + 1];
+        for (int i = yBelow; i <= yAbove; i++)
+            yB[i-yBelow] = i - yBelly;
+
+        log.info("tip = "+tip+", yBelly = "+yBelly);
+
+        // fit parabola to neighbourhood of yBelly
+        Polynome bellyFit = quadraticFit(yB, xB);
+
+        // and calculate curvatures at yBelly
+        double c1 = 1 / bellyFit.getValueAt(0); // horizontal curvature
+        double c2 = - 2*bellyFit.getCoeff(2) /
+            Math.cos(Math.atan(bellyFit.getCoeff(1)));
+        double c0 = pixel_size / tip_radius;// tip curvature (pix^-1)
+
+        log.info("c0 = "+c0+", c1 = "+c1+", c2 = "+c2);
+
+        // pressure difference between yBelly and tip gives capillary
+        // length estimate
+        capillary_length = Math.sqrt( (tip-yBelly) / (2*c0-c1-c2) ) *pixel_size;
+    }
+
+    /** Initializes the {@link #pixel_size} parameter from the image
+     * if the latter is calibrated.
+     */
     protected void initPixelSize() {
-        pixel_size = 1;
+
+    }
+
+    /** Detect drop borders and store positions in the
+     * left/rightBorder arrays.
+     */
+    private void findDropBorders(ImageProcessor ip) {
+        leftBorder = null;
+        rightBorder = null;
+
+        for (int y = bounds.height - 1; y >= 0; y--) {
+
+            // find border positions with integer precision
+
+            // left border first
+            int xl = 0;
+            while (xl < bounds.width &&
+                   ip.getPixelValue(bounds.x + xl, bounds.y + y) > threshold)
+                xl ++;
+
+            if (xl >= bounds.width) {// drop not detected in this scanline
+                if (leftBorder != null) {
+                    leftBorder[y]  = Double.NaN;
+                    rightBorder[y] = Double.NaN;
+                }
+                continue;
+            } else if (leftBorder == null) {
+                // allocate array on drop tip detection
+                leftBorder = new double[y+1];
+                rightBorder = new double[y+1];
+            }
+
+            // right border next
+            int xr = bounds.width - 1;
+            while (xr > xl &&
+                   ip.getPixelValue(bounds.x + xr, bounds.y + y) > threshold)
+                xr --;
+            xr ++; // so xl and xr point just to the right of the interface
+
+            // don't go further if not enough pixels for subpixel-fitting
+            if (xr - xl <= voisinage ||
+                xl - voisinage < 0 || xr + voisinage > bounds.width) {
+                leftBorder[y]  = xl - 0.5;
+                rightBorder[y] = xr - 0.5;
+                continue;
+            }
+
+            // now determine drop borders with sub-pixel precision
+            leftBorder[y]  = fitStep(ip, xl, y, voisinage, false);
+            rightBorder[y] = fitStep(ip, xr, y, voisinage, true);
+        } // end for y
+    }
+
+    /** Calculate sub-pixel position of a (rising/falling) step having
+     * the same integral as the image intensity profile around the
+     * position (x,y). Used to refine drop interface detection.
+     */
+    private double fitStep(ImageProcessor ip, int x, int y, int n, boolean rising) {
+        double acc = 0;
+        double minValue = Double.POSITIVE_INFINITY;
+        double maxValue = Double.NEGATIVE_INFINITY;
+        for (int dx = -n; dx < n; dx++) {
+            double v = ip.getPixelValue(bounds.x + x + dx, bounds.y + y);
+            acc += v;
+            if (v > maxValue) maxValue = v;
+            if (v < minValue) minValue = v;
+        }
+        acc -= 2*n*minValue;
+        acc /= maxValue - minValue;
+        if (rising)
+            return x - 0.5 + n - acc;
+        else
+            return x - 0.5 - n + acc;
     }
 
     // -- Processing --
@@ -195,6 +396,11 @@ public class Goutte_pendante implements Command, Previewable {
         final List<Overlay> overlays = new ArrayList<Overlay>();
         overlays.add(rectangle);
         ij.overlay().addOverlays(imageDisplay, overlays);
+        for (final net.imagej.display.DataView view : imageDisplay) {
+            if (view instanceof net.imagej.display.OverlayView) {
+                view.setSelected(true);
+            }
+        }
 
         // display the dataset
         ij.ui().show(imageDisplay);
@@ -203,4 +409,106 @@ public class Goutte_pendante implements Command, Previewable {
         ij.command().run(Goutte_pendante.class, true);
     }
 
+    // -- private classes and helper methods --
+
+    private class Polynome {
+        double[] coeff;
+
+        Polynome(double coeff[]) {
+            this.coeff = coeff;
+        }
+
+        double getValueAt(double x) {
+            double xp = 1, y = 0;
+            for (int i=0; i<coeff.length; i++) {
+                y += coeff[i]*xp;
+                xp *= x;
+            }
+            return y;
+        }
+
+        double getCoeff(int i) {
+            return coeff[i];
+        }
+
+        public String toString() {
+            return "polynome coeffs: "+Arrays.toString(coeff);
+        }
+    }
+
+    /* Calculate the least squares linear fit to the given data
+     * points. Points are ignored if either value is NaN.
+     *
+     * @throws IllegalArgumentException if input arrays have different lengths
+     */
+    Polynome linearFit(double[] x, double[] y) {
+        if (x.length != y.length)
+            throw new IllegalArgumentException("linearFit: input arrays of different length (" + x.length + " != " + y.length + ")");
+        double xi1 = 0, xi2 = 0, zeta0 = 0, zeta1 = 0;
+        int N = 0;
+        for (int i=0; i<x.length; i++) {
+            if (!Double.isNaN(x[i]) && !Double.isNaN(y[i])) {
+                xi1 += x[i];
+                xi2 += x[i]*x[i];
+                zeta0 += y[i];
+                zeta1 += y[i]*x[i];
+                N++;
+            }
+        }
+        double det = xi1*xi1 - N*xi2;
+        if (det == 0) {
+            log.error("linear fit failed because of nil determinant for" +
+                      "points:\n" +
+                      Arrays.toString(x) + "\n" + Arrays.toString(y));
+            return null;
+        }
+        double[] coeff = new double[2];
+        coeff[0] = (-xi2*zeta0 + xi1*zeta1) / det;
+        coeff[1] = (xi1*zeta0 - N*zeta1) / det;
+
+        return new Polynome(coeff);
+    }
+
+    /* Calculate the least squares quadratic fit to the given data
+     * points. Points are ignored if either value is NaN.
+     *
+     * @throws IllegalArgumentException if input arrays have different lengths
+     */
+    Polynome quadraticFit(double[] x, double[] y) {
+        if (x.length != y.length)
+            throw new IllegalArgumentException("quadraticFit: input arrays of different length (" + x.length + " != " + y.length + ")");
+        double xi1 = 0, xi2 = 0, xi3 = 0, xi4 = 0;
+        double zeta0 = 0, zeta1 = 0, zeta2 = 0;
+        int N = 0;
+        for (int i=0; i<x.length; i++) {
+            if (!Double.isNaN(x[i]) && !Double.isNaN(y[i])) {
+                xi1 += x[i];
+                xi2 += x[i]*x[i];
+                xi3 += x[i]*x[i]*x[i];
+                xi4 += x[i]*x[i]*x[i]*x[i];
+                zeta0 += y[i];
+                zeta1 += y[i]*x[i];
+                zeta2 += y[i]*x[i]*x[i];
+                N++;
+            }
+        }
+        double m11 = N*xi4 - xi2*xi2;
+        double m12 = xi1*xi2 - N*xi3;
+        double m22 = N*xi2 - xi1*xi1;
+        double z1 = N*zeta1 - xi1*zeta0;
+        double z2 = N*zeta2 - xi2*zeta0;
+        double det = m11*m22 - m12*m12;
+        if (det == 0) {
+            log.error("quadratic fit failed because of nil subdeterminant" +
+                      "for points:\n" +
+                      Arrays.toString(x) + "\n" + Arrays.toString(y));
+            return null;
+        }
+        double[] coeff = new double[3];
+        coeff[2] = (m12*z1 + m22*z2) / det;
+        coeff[1] = (m11*z1 + m12*z2) / det;
+        coeff[0] = (zeta0 - xi1*coeff[1] - xi2*coeff[2]) / N;
+
+        return new Polynome(coeff);
+    }
 }
