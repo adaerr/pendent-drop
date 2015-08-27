@@ -50,7 +50,7 @@ import org.scijava.util.Colors;
 
 /** An ImageJ2 plugin analyzing the shape of a pendant drop. */
 @Plugin(type = Command.class,
-        menuPath = "Plugins>Drop Analysis>Pendant Drop",
+        menuPath = "Plugins>OverlayNullInInit",
         initializer = "paramEstimator")
 public class Goutte_pendante implements Command, Previewable {
 
@@ -63,68 +63,33 @@ public class Goutte_pendante implements Command, Previewable {
     private LogService log;
 
     @Parameter(persist = false)
-    private RectangleOverlay dropRegion;
+    private RectangleOverlay region;
 
-    // The 'min' attribute requires a String, but
-    // Double.toString(Double.MIN_VALUE) is not a constant to the
-    // compiler, so we use an explicit value close to the real
-    // constant
-    @Parameter(persist = false, label = "tip_radius of curvature", min = "1e-300")
-    private double tip_radius;
-
-    @Parameter(persist = false, label = "capillary length", min = "1e-300")
-    private double capillary_length;
-
-    @Parameter(persist = false, label = "tip_x coordinate")
-    private double tip_x;
-
-    @Parameter(persist = false, label = "tip_y coordinate")
-    private double tip_y;
-
-    @Parameter(persist = false, label = "gravity angle (deg)")
-    private double gravity_deg;
-
-    @Parameter(persist = false, initializer = "initPixelSize")
-    private double pixel_size;
-
-    @Parameter(label = "density contrast times g")
-    private double rho_g;
-
-    @Parameter(visibility = org.scijava.ItemVisibility.MESSAGE)
-    private final String label_surface_tension = "Surface tension";
-
-    @Parameter(persist = false, visibility = org.scijava.ItemVisibility.MESSAGE, label = "Surface tension")
-    private double surface_tension = 0;
-
-    // -- Other fields --
-
-    /** The dimensional parameters. */
-    //private HashMap paramWithDim = null;
+    @Parameter(persist = false)
+    private Overlay overlay;
 
     // -- Command methods --
 
     @Override
     public void run() {
-        log.info("drop region: +" + dropRegion.getOrigin(0)
-                 + " +" + dropRegion.getOrigin(1)
-                 + ", " + dropRegion.getExtent(0)
-                 + " x " + dropRegion.getExtent(1));
-
-        ImageStack stack = imp.getStack();
-        // create results table
-
-        for (int n=0; n<stack.getSize(); n++) {
-            analyseImage(stack.getProcessor(n+1));
-            // copy parameters into results table
-        }
+        log.info("imp parameter in run(): "
+                 + (imp==null?"":"non-") + "null");
+        log.info("region parameter in run(): "
+                 + (region==null?"":"non-") + "null");
+        log.info("overlay parameter in run(): "
+                 + (overlay==null?"":"non-") + "null");
     }
 
     // -- Previewable methods --
 
     @Override
     public void preview() {
-        updateOverlay();
-        surface_tension ++;
+        log.info("imp parameter in preview(): "
+                 + (imp==null?"":"non-") + "null");
+        log.info("region parameter in preview(): "
+                 + (region==null?"":"non-") + "null");
+        log.info("overlay parameter in preview(): "
+                 + (overlay==null?"":"non-") + "null");
     }
 
     @Override
@@ -134,49 +99,28 @@ public class Goutte_pendante implements Command, Previewable {
 
     // -- Initializer methods --
 
-    /** Initializes some parameters by roughly analyzing the image.
-     * The corresponding parameters are: {@link #tip_radius},
-     * {@link #capillary_length}, {@link #tip_x}, {@link #tip_y},
-     * {@link #gravity_deg}
-     */
     protected void paramEstimator() {
-        tip_radius = 42;
-        capillary_length = 43;
-        tip_x = 44;
-        tip_y = 45;
-        gravity_deg = 0;
-    }
-
-    /** Initializes the {@link #pixel_size} parameter. */
-    protected void initPixelSize() {
-        pixel_size = 1;
-    }
-
-    // -- Processing --
-
-    public void updateOverlay() {
-        log.info("updating overlay");
-    }
-
-    public void analyseImage(ImageProcessor ip) {
-        log.info("processing ip: "+ip.toString());
+        log.info("imp parameter in initializer(): "
+                 + (imp==null?"":"non-") + "null");
+        log.info("region parameter in initializer(): "
+                 + (region==null?"":"non-") + "null");
+        log.info("overlay parameter in initializer(): "
+                 + (overlay==null?"":"non-") + "null");
     }
 
     // -- Main method --
 
     /** Tests our command. */
     public static void main(final String... args) throws Exception {
-        final String testImagePath = "/home/adrian/Programmes/plugins_ImageJ_src/Traitement_Gouttes/src/test/resources/eauContrasteMaxStack.tif";
 
         // Launch ImageJ as usual.
-        //final ImageJ ij = net.imagej.Main.launch(args);
-        final ImageJ ij = new ImageJ();
-        ij.ui().showUI();
+        final ImageJ ij = net.imagej.Main.launch(args);
 
-        // Open test image.
-        final ServiceHelper sh = new ServiceHelper(ij.getContext());
-        final IOService io = sh.loadService(DefaultIOService.class);
-        final Dataset dataset = (Dataset) io.open(testImagePath);
+        final String name = "Test Image";
+        final long[] dims = { 400, 400 };
+        final AxisType[] axes = { Axes.X, Axes.Y };
+        final net.imagej.DatasetService datasetService = ij.dataset();
+        final Dataset dataset = datasetService.create(new net.imglib2.type.numeric.integer.UnsignedByteType(), dims, name, axes);
 
         // create a display for the dataset
         final ImageDisplay imageDisplay =
@@ -184,10 +128,10 @@ public class Goutte_pendante implements Command, Previewable {
 
         // create a rectangle
         final RectangleOverlay rectangle = new RectangleOverlay(ij.getContext());
-        rectangle.setOrigin(110, 0);
-        rectangle.setOrigin(60, 1);
-        rectangle.setExtent(340, 0);
-        rectangle.setExtent(420, 1);
+        rectangle.setOrigin(10, 0);
+        rectangle.setOrigin(20, 1);
+        rectangle.setExtent(30, 0);
+        rectangle.setExtent(40, 1);
         rectangle.setLineColor(Colors.HONEYDEW);
         rectangle.setLineWidth(1);
 
