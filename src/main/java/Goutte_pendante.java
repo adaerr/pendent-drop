@@ -51,6 +51,7 @@ import org.scijava.service.ServiceHelper;
 import org.scijava.util.Colors;
 import org.scijava.util.IntRect;
 import org.scijava.util.RealRect;
+import org.scijava.widget.Button;
 
 /** An ImageJ2 plugin analyzing the shape of a pendant drop.
  */
@@ -77,32 +78,68 @@ public class Goutte_pendante implements Command, Previewable {
     // Double.toString(Double.MIN_VALUE) is not a constant to the
     // compiler, so we use an explicit value close to the real
     // constant
-    @Parameter(persist = false, label = "tip_radius of curvature", min = "1e-300")
+    @Parameter(label = "tip_radius of curvature",
+               persist = false, min = "1e-300")
     private double tip_radius;
 
-    @Parameter(persist = false, label = "capillary length", min = "1e-300")
+    @Parameter(label = "capillary length",
+               persist = false, min = "1e-300")
     private double capillary_length;
 
-    @Parameter(persist = false, label = "tip_x coordinate")
+    @Parameter(label = "tip_x coordinate",
+               persist = false)
     private double tip_x;
 
-    @Parameter(persist = false, label = "tip_y coordinate")
+    @Parameter(label = "tip_y coordinate",
+               persist = false)
     private double tip_y;
 
-    @Parameter(persist = false, label = "gravity angle (deg)")
+    @Parameter(label = "gravity angle (deg)",
+               persist = false)
     private double gravity_deg;
 
-    @Parameter(persist = false, initializer = "initPixelSize", min = "1e-300")
+    @Parameter(label = "pixel size",
+               initializer = "initPixelSize",
+               persist = false,
+               min = "1e-300")
     private double pixel_size;
 
     @Parameter(label = "density contrast times g")
     private double rho_g;
 
-    @Parameter(visibility = org.scijava.ItemVisibility.MESSAGE)
-    private final String label_surface_tension = "Surface tension";
-
-    @Parameter(persist = false, visibility = org.scijava.ItemVisibility.MESSAGE, label = "Surface tension")
+    @Parameter(label = "Surface tension",
+               persist = false,
+               visibility = org.scijava.ItemVisibility.MESSAGE)
     private double surface_tension = 0;
+
+    @Parameter(label = "Adjustment penalty",
+               persist = false,
+               visibility = org.scijava.ItemVisibility.MESSAGE)
+    private double adj_penalty = 0;
+
+    @Parameter(label = "fit parameters checked below",
+               callback = "fitButtonCB")
+    private Button fitButton;
+
+    @Parameter(label = "tip radius",
+               callback = "doNothing")
+    private boolean fit_include_tip_radius = true;
+
+    @Parameter(label = "capillary length",
+               callback = "doNothing")
+    private boolean fit_include_capillary_length = true;
+
+    @Parameter(label = "tip x coordinate",
+               callback = "doNothing")
+    private boolean fit_include_tip_x = true;
+
+    @Parameter(label = "tip y coordinate",
+               callback = "doNothing")
+    private boolean fit_include_tip_y = true;
+
+    @Parameter(label = "gravity angle",
+               callback = "doNothing")
+    private boolean fit_include_gravity_angle = true;
 
     // -- Other fields --
 
@@ -139,12 +176,15 @@ public class Goutte_pendante implements Command, Previewable {
 
     @Override
     public void run() {
+        prepareFitParams();
+
         ImageStack stack = imp.getStack();
-        // create results table
+        // TODO: create results table
 
         for (int n=0; n<stack.getSize(); n++) {
             analyseImage(stack.getProcessor(n+1));
-            // copy parameters into results table
+            // TODO: copy parameters into results table
+
         }
     }
 
@@ -153,7 +193,6 @@ public class Goutte_pendante implements Command, Previewable {
     @Override
     public void preview() {
         updateOverlay();
-        surface_tension ++;
     }
 
     @Override
@@ -175,8 +214,8 @@ public class Goutte_pendante implements Command, Previewable {
                              (int) Math.round(r.y),
                              (int) Math.round(r.width),
                              (int) Math.round(r.height));
-        log.info("drop region: +" + bounds.x + " +" +  r.y
-                 + ", " +  r.width + " x " + r.height);
+        //log.info("drop region: +" + bounds.x + " +" +  r.y
+        //         + ", " +  r.width + " x " + r.height);
 
         // pixel size and density contrast parameters
         ij.measure.Calibration cal = imp.getCalibration();
@@ -256,7 +295,7 @@ public class Goutte_pendante implements Command, Previewable {
         for (int i = yBelow; i <= yAbove; i++)
             yB[i-yBelow] = i - yBelly;
 
-        log.info("tip = "+tip+", yBelly = "+yBelly);
+        //log.info("tip = "+tip+", yBelly = "+yBelly);
 
         // fit parabola to neighbourhood of yBelly
         Polynome bellyFit = quadraticFit(yB, xB);
@@ -267,18 +306,11 @@ public class Goutte_pendante implements Command, Previewable {
             Math.cos(Math.atan(bellyFit.getCoeff(1)));
         double c0 = pixel_size / tip_radius;// tip curvature (pix^-1)
 
-        log.info("c0 = "+c0+", c1 = "+c1+", c2 = "+c2);
+        //log.info("c0 = "+c0+", c1 = "+c1+", c2 = "+c2);
 
         // pressure difference between yBelly and tip gives capillary
         // length estimate
         capillary_length = Math.sqrt( (tip-yBelly) / (2*c0-c1-c2) ) *pixel_size;
-    }
-
-    /** Initializes the {@link #pixel_size} parameter from the image
-     * if the latter is calibrated.
-     */
-    protected void initPixelSize() {
-
     }
 
     /** Detect drop borders and store positions in the
@@ -335,7 +367,8 @@ public class Goutte_pendante implements Command, Previewable {
      * the same integral as the image intensity profile around the
      * position (x,y). Used to refine drop interface detection.
      */
-    private double fitStep(ImageProcessor ip, int x, int y, int n, boolean rising) {
+    private double fitStep(ImageProcessor ip, int x, int y, int n,
+                           boolean rising) {
         double acc = 0;
         double minValue = Double.POSITIVE_INFINITY;
         double maxValue = Double.NEGATIVE_INFINITY;
@@ -353,9 +386,35 @@ public class Goutte_pendante implements Command, Previewable {
             return x - 0.5 - n + acc;
     }
 
+    // -- Callbacks --
+
+    /** Called by the button that triggers a fit of the drop contour. */
+    private void fitButtonCB() {
+        //log.info("fitButtonCB !");
+        log.info("will fit:");
+        if (fit_include_tip_radius) log.info("  tip radius");
+        if (fit_include_capillary_length) log.info("  capillary_length");
+        if (fit_include_tip_x) log.info("  tip x coordinate");
+        if (fit_include_tip_y) log.info("  tip y coordinate");
+        if (fit_include_gravity_angle) log.info("  gravity angle");
+        prepareFitParams();
+        analyseImage(imp.getProcessor());
+        updateOverlay();
+    }
+
+    /** This callback is used on parameters whose change need not
+     * trigger a preview() call.
+     */
+    private void doNothing() {
+        log.info("quiet please!");
+    }
+
     // -- Processing --
 
-    public void updateOverlay() {
+    private void prepareFitParams() {
+    }
+
+    private void updateOverlay() {
         log.info("updating overlay");
     }
 
