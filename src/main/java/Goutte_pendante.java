@@ -130,24 +130,29 @@ public class Goutte_pendante implements Command, Previewable {
                callback = "fitButtonCB")
     private Button fitButton;
 
+    @Parameter(persist = false,
+               visibility = org.scijava.ItemVisibility.MESSAGE,
+               required = false)
+    private String fittability = null;
+
     @Parameter(label = "Tip radius",
-               callback = "doNothing")
+               callback = "fitCheckboxCB")
     private boolean fit_include_tip_radius = true;
 
     @Parameter(label = "Capillary length",
-               callback = "doNothing")
+               callback = "fitCheckboxCB")
     private boolean fit_include_capillary_length = true;
 
     @Parameter(label = "Tip x coordinate",
-               callback = "doNothing")
+               callback = "fitCheckboxCB")
     private boolean fit_include_tip_x = true;
 
     @Parameter(label = "Tip y coordinate",
-               callback = "doNothing")
+               callback = "fitCheckboxCB")
     private boolean fit_include_tip_y = true;
 
     @Parameter(label = "Gravity angle",
-               callback = "doNothing")
+               callback = "fitCheckboxCB")
     private boolean fit_include_gravity_angle = true;
 
     // -- Other fields --
@@ -418,11 +423,17 @@ public class Goutte_pendante implements Command, Previewable {
         //updateOverlay();
     }
 
-    /** This callback is used on parameters whose change need not
-     * trigger a preview() call.
+    /** Check if at least one fit parameter is checked.
      */
-    private void doNothing() {
-        log.info("quiet please!");
+    private void fitCheckboxCB() {
+        if (!( fit_include_tip_radius || fit_include_capillary_length ||
+               fit_include_tip_x || fit_include_tip_y ||
+               fit_include_gravity_angle )) {
+            if (fittability == null)
+                fittability = "At least one parameter must be checked !";
+        } else {
+            if (fittability != null) fittability = null;
+        }
     }
 
     // -- Processing --
