@@ -22,6 +22,15 @@
  * (Plugins -> Drop Analysis -> About Pendant Drop)
  */
 
+import java.awt.Color;
+import java.awt.Rectangle;
+import java.awt.Shape;
+import java.awt.geom.Path2D;
+import java.awt.geom.PathIterator;
+import java.awt.geom.Point2D;
+import java.awt.geom.AffineTransform;
+import java.awt.geom.Area;
+
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
@@ -49,7 +58,6 @@ import org.scijava.plugin.Parameter;
 import org.scijava.plugin.Plugin;
 import org.scijava.service.ServiceHelper;
 import org.scijava.util.Colors;
-import org.scijava.util.IntRect;
 import org.scijava.util.RealRect;
 import org.scijava.widget.Button;
 
@@ -78,33 +86,33 @@ public class Goutte_pendante implements Command, Previewable {
     // Double.toString(Double.MIN_VALUE) is not a constant to the
     // compiler, so we use an explicit value close to the real
     // constant
-    @Parameter(label = "tip_radius of curvature",
+    @Parameter(label = "Tip radius of curvature",
                persist = false, min = "1e-300")
     private double tip_radius;
 
-    @Parameter(label = "capillary length",
+    @Parameter(label = "Capillary length",
                persist = false, min = "1e-300")
     private double capillary_length;
 
-    @Parameter(label = "tip_x coordinate",
+    @Parameter(label = "Tip x coordinate",
                persist = false)
     private double tip_x;
 
-    @Parameter(label = "tip_y coordinate",
+    @Parameter(label = "Tip y coordinate",
                persist = false)
     private double tip_y;
 
-    @Parameter(label = "gravity angle (deg)",
+    @Parameter(label = "Gravity angle (deg)",
                persist = false)
     private double gravity_deg;
 
-    @Parameter(label = "pixel size",
+    @Parameter(label = "Pixel size",
                initializer = "initPixelSize",
                persist = false,
                min = "1e-300")
     private double pixel_size;
 
-    @Parameter(label = "density contrast times g")
+    @Parameter(label = "Density contrast times g")
     private double rho_g;
 
     @Parameter(label = "Surface tension",
@@ -117,27 +125,28 @@ public class Goutte_pendante implements Command, Previewable {
                visibility = org.scijava.ItemVisibility.MESSAGE)
     private double adj_penalty = 0;
 
-    @Parameter(label = "fit parameters checked below",
+    @Parameter(label = "Fit parameters checked below",
+               description = "At least one parameter must be checked.",
                callback = "fitButtonCB")
     private Button fitButton;
 
-    @Parameter(label = "tip radius",
+    @Parameter(label = "Tip radius",
                callback = "doNothing")
     private boolean fit_include_tip_radius = true;
 
-    @Parameter(label = "capillary length",
+    @Parameter(label = "Capillary length",
                callback = "doNothing")
     private boolean fit_include_capillary_length = true;
 
-    @Parameter(label = "tip x coordinate",
+    @Parameter(label = "Tip x coordinate",
                callback = "doNothing")
     private boolean fit_include_tip_x = true;
 
-    @Parameter(label = "tip y coordinate",
+    @Parameter(label = "Tip y coordinate",
                callback = "doNothing")
     private boolean fit_include_tip_y = true;
 
-    @Parameter(label = "gravity angle",
+    @Parameter(label = "Gravity angle",
                callback = "doNothing")
     private boolean fit_include_gravity_angle = true;
 
@@ -147,7 +156,13 @@ public class Goutte_pendante implements Command, Previewable {
     //private HashMap paramWithDim = null;
 
     /** A rectangle representation of dropRegion with integer precision. */
-    private IntRect bounds;
+    private Rectangle bounds;
+    private Area boundsArea = null;
+    private Area getBoundsArea() {
+        if (boundsArea == null)
+            boundsArea = new Area(bounds);
+        return boundsArea;
+    }
 
     /** Arrays containing x coordinates of the drop interface. */
     private double[] leftBorder;
@@ -192,7 +207,8 @@ public class Goutte_pendante implements Command, Previewable {
 
     @Override
     public void preview() {
-        updateOverlay();
+        calcContour();
+        //updateOverlay();
     }
 
     @Override
@@ -210,10 +226,10 @@ public class Goutte_pendante implements Command, Previewable {
     protected void paramInitializer() {
         // get selection bounds as rectangle
         RealRect r = overlayService.getSelectionBounds(display);
-        bounds = new IntRect((int) Math.round(r.x),
-                             (int) Math.round(r.y),
-                             (int) Math.round(r.width),
-                             (int) Math.round(r.height));
+        bounds = new Rectangle((int) Math.round(r.x),
+                               (int) Math.round(r.y),
+                               (int) Math.round(r.width),
+                               (int) Math.round(r.height));
         //log.info("drop region: +" + bounds.x + " +" +  r.y
         //         + ", " +  r.width + " x " + r.height);
 
@@ -399,7 +415,7 @@ public class Goutte_pendante implements Command, Previewable {
         if (fit_include_gravity_angle) log.info("  gravity angle");
         prepareFitParams();
         analyseImage(imp.getProcessor());
-        updateOverlay();
+        //updateOverlay();
     }
 
     /** This callback is used on parameters whose change need not
@@ -414,8 +430,218 @@ public class Goutte_pendante implements Command, Previewable {
     private void prepareFitParams() {
     }
 
-    private void updateOverlay() {
+    /** Calculate the drop profile corresponding to the current shape
+     * descriptors, in non-dimensional form and then transformed to
+     * screen coordinates.
+     */
+    private void calcContour() {
+        final ArrayList<Point2D.Double> p = calculateProfile(tip_radius/capillary_length,
+                                    bounds.height*pixel_size/capillary_length);
+        final Path2D c = makeClosedPath(p);
+        final Shape s = contourToScreen(c, capillary_length/pixel_size, tip_x/pixel_size,
+                               tip_y/pixel_size, gravity_deg, getBoundsArea());
+        updateOverlay(s);
+    }
+
+    /** Hydrostatic pressure equilibrium equations for an axisymetric drop.
+     * variables (r, psi, kappa, z) represent
+     *
+     * r ... drop radius in cylindrical coordinates
+     * psi ... interface tilt to horizontal
+     * kappa ... radial curvature
+     * z ... height
+     */
+    private void deriv(double state[], double deriv[]) {
+        final double c = Math.cos(state[1]);
+        final double s = Math.sin(state[1]);
+        deriv[0] = c;
+        deriv[1] = state[2];
+        deriv[2] = - s + c*(s/state[0] - state[2])/state[0];
+        deriv[3] = s;
+    }
+
+    /** Calculate non-dimensional drop profile through integration of
+     * the hydrostatic pressure equilibrium. Assumes axisymetry.
+     * Expects tip radius and maximum z value to be given normalised
+     * by capillary length. */
+    ArrayList<Point2D.Double> calculateProfile(double tipRadius, double zMax) {
+        //System.err.println("tipRadius = "+tipRadius+", zMax = "+zMax);
+
+        final double ds = 0.001;// integration step
+        final ArrayList<Point2D.Double> profile = new ArrayList<Point2D.Double>((int)(zMax/ds));
+
+        // Near the drop tip the integral equations become singular,
+        // but the solution is simply a nearly perfectly spherical
+        // profile (at least at distances small wrt capillary length
+        // and tip radius): we use an approximate solution to get away
+        // from the singularity at r=0.
+        //
+        // The following constant defines the fraction of capillary
+        // length or tip radius (whichever is smaller) up to which we
+        // use the approximate solution
+        final double approxLimit = 1;//0.01;
+
+        double s;
+        double sLimit;// curvilinear coordinate where we switch from
+        // the approximate solution to integration
+        if (tipRadius < 1)
+            sLimit = approxLimit*tipRadius;// tipRadius is limiting
+        else
+            sLimit = approxLimit;// the capillary length is limiting
+        profile.add(new Point2D.Double(0, 0));
+        for (s=0; s < sLimit; s += ds) {
+            double r, z;
+            r = tipRadius*Math.sin(s/tipRadius) +
+                Math.pow(s,5)/(40*tipRadius*tipRadius);
+            z = 0.5f*s*s*(1-s*s*(0.75f+1/(tipRadius*tipRadius))/12)/tipRadius;
+            profile.add(new Point2D.Double((double)r,(double)z));
+        }
+
+        // now continue through integration with a Runge-Kutta scheme
+        double[] state, tmp, k1, k2, k3, k4;
+        int nVar = 4;// r, psi, kappa, z
+        state = new double[nVar];
+        tmp = new double[nVar];
+        k1 = new double[nVar];
+        k2 = new double[nVar];
+        k3 = new double[nVar];
+        k4 = new double[nVar];
+        // intial conditions using approximate solution
+        state[0] = tipRadius*Math.sin(s/tipRadius) +
+            Math.pow(s,5)/(40*tipRadius*tipRadius);// r
+        state[1] = s*(1 - 0.125f*s*s)/tipRadius;// psi
+        state[2] = (1 - 0.375f*s*s)/tipRadius;// kappa
+        state[3] = 0.5f*s*s*(1 - s*s*(0.75f + 1/(tipRadius*tipRadius))/12) /
+            tipRadius;// z
+        while (state[3] < zMax) {// integrate until tall enough
+            deriv(state,k1);
+            for (int i=0; i<nVar; i++) tmp[i] = state[i] + 0.5f*ds*k1[i];
+            deriv(tmp,k2);
+            for (int i=0; i<nVar; i++) tmp[i] = state[i] + 0.5f*ds*k2[i];
+            deriv(tmp,k3);
+            for (int i=0; i<nVar; i++) tmp[i] = state[i] + ds*k3[i];
+            deriv(tmp,k4);
+            for (int i=0; i<nVar; i++)
+                state[i] = state[i] + ds*(k1[i]+2*k2[i]+2*k3[i]+k4[i])/6;
+            if (k4[3] < 0) break; // abort if profile bends back downwards
+            profile.add(new Point2D.Double((double)state[0],(double)state[3]));
+        }
+
+        return profile;
+    }
+
+    /** Construct closed drop contour from profile by concatenating
+     * the profile with its reflection about the y-axis
+     */
+    private Path2D makeClosedPath(final ArrayList<Point2D.Double> profile) {
+        final Path2D.Double drop = new Path2D.Double();
+        Point2D.Double p;
+        int N = profile.size();
+        p = profile.get(0);
+        drop.moveTo(p.x, p.y);
+        for (int i = 1; i < N; i++) {
+            p = profile.get(i);
+            drop.lineTo(p.x, p.y);
+        }
+        for (int i = N-1; i > 0; i--) {
+            p = profile.get(i);
+            drop.lineTo(-p.x, p.y);
+        }
+        drop.closePath();
+
+        return drop;
+    }
+
+    /** Transform the non-dimensional drop path into screen space.
+     *
+     *  @param drop non-dimensional drop path
+     *  @param scale capillary length in pixels
+     *  @param tipX tip x coordinate in pixels
+     *  @param tipY tip y coordinate in pixels
+     *  @param angle_deg deviation of gravity from vertical in degrees
+     *  @param clipArea intersect resulting shape with this area
+     */
+    Shape contourToScreen(Path2D drop, double scale, double tipX, double tipY,
+                          double angle_deg, Area clipArea) {
+
+        // read this bottom-up to get the order of transformations right...
+        AffineTransform toScreenT;
+        toScreenT = AffineTransform.getTranslateInstance(tipX, tipY);
+        toScreenT.scale(scale, scale);
+        toScreenT.rotate(angle_deg * Math.PI/180);
+        toScreenT.quadrantRotate(2);
+        //return drop.createTransformedShape(toScreenT);
+
+        // Generate a low resolution version of the drop path. If the
+        // path is polygonal with roughly pixel precision we will not
+        // see the difference in the fit (except on the computation
+        // time...)
+        final double flatness = 0.5; // Probably no effect unless the
+                                     // flattening path iterator also
+                                     // flattens polygons.
+        final double minDist2 = 1.0; // Square of minimal distance
+                                     // between points in the low res
+                                     // version (in pixels).
+        Path2D lowresDrop = new Path2D.Double();
+        double[] coords = new double[6];
+        double ox, oy;
+        PathIterator iter = drop.getPathIterator(toScreenT, flatness);
+        iter.currentSegment(coords);
+        ox = coords[0];
+        oy = coords[1];
+        lowresDrop.moveTo(ox, oy);
+        iter.next();
+        while (!iter.isDone()) {
+            int type = iter.currentSegment(coords);
+            if (type == PathIterator.SEG_CLOSE) {
+                lowresDrop.closePath();
+                break;
+            }
+            double x = coords[0];
+            double y = coords[1];
+            //System.err.println("type = "+type+", x = "+x+", y = "+y+
+            //       ", d2 = "+((x-ox)*(x-ox)+(y-oy)*(y-oy)));
+            if ((x-ox)*(x-ox)+(y-oy)*(y-oy) > minDist2) {
+                lowresDrop.lineTo(x,y);
+                ox = x;
+                oy = y;
+            }
+            iter.next();
+        }
+        lowresDrop.closePath();
+
+        Area visibleDrop = new Area(lowresDrop);
+        visibleDrop.intersect(clipArea);
+
+        return visibleDrop;
+    }
+
+    /** Set given curve as overlay on image. */
+    private void updateOverlay(Shape c) {
         log.info("updating overlay");
+        if (c == null) return;
+        // translation by +(0.5,0.5)
+        AffineTransform t = new AffineTransform(1, 0, 0, 1, 0.5, 0.5);
+        //imp.setOverlay(t.createTransformedShape(c), Color.red, null);
+        Path2D.Float border = new Path2D.Float();
+        border.moveTo(bounds.x + leftBorder[0], bounds.y + 0);
+        for (int y = 0; y < leftBorder.length; y++) {
+        border.lineTo(bounds.x + leftBorder[y], bounds.y + y);
+        }
+        for (int y = rightBorder.length-1; y>=0; y--) {
+        border.lineTo(bounds.x + rightBorder[y], bounds.y + y);
+        }
+        border.closePath();
+
+        ij.gui.Roi r = new ij.gui.ShapeRoi(t.createTransformedShape(new Area(border)));
+        r.setStrokeColor(Color.blue);
+        ij.gui.Overlay o = new ij.gui.Overlay(r);
+
+        r = new ij.gui.ShapeRoi(t.createTransformedShape(c));
+        r.setStrokeColor(Color.red);
+        o.add(r);
+
+        imp.setOverlay(o);
     }
 
     public void analyseImage(ImageProcessor ip) {
@@ -470,13 +696,22 @@ public class Goutte_pendante implements Command, Previewable {
 
     // -- private classes and helper methods --
 
+    /** An object describing a real-valued polynome in one variable. */
     private class Polynome {
         double[] coeff;
 
+        /** Construct a polynome with given coefficients (coeff[k] is
+         * the coefficient of x^k). The array must be non-null. */
         Polynome(double coeff[]) {
+            if (coeff == null)
+                throw new IllegalArgumentException("Cannot create a polynome with null coefficients.");
             this.coeff = coeff;
         }
 
+        /** Evaluate polynome at x.
+         *
+         * @return sum_k coeff[k] * x^k
+         */
         double getValueAt(double x) {
             double xp = 1, y = 0;
             for (int i=0; i<coeff.length; i++) {
@@ -486,10 +721,12 @@ public class Goutte_pendante implements Command, Previewable {
             return y;
         }
 
+        /** Get indicated coefficient. */
         double getCoeff(int i) {
             return coeff[i];
         }
 
+        /** Return textual description of this polynome. */
         public String toString() {
             return "polynome coeffs: "+Arrays.toString(coeff);
         }
@@ -500,7 +737,7 @@ public class Goutte_pendante implements Command, Previewable {
      *
      * @throws IllegalArgumentException if input arrays have different lengths
      */
-    Polynome linearFit(double[] x, double[] y) {
+    private Polynome linearFit(double[] x, double[] y) {
         if (x.length != y.length)
             throw new IllegalArgumentException("linearFit: input arrays of different length (" + x.length + " != " + y.length + ")");
         double xi1 = 0, xi2 = 0, zeta0 = 0, zeta1 = 0;
@@ -533,7 +770,7 @@ public class Goutte_pendante implements Command, Previewable {
      *
      * @throws IllegalArgumentException if input arrays have different lengths
      */
-    Polynome quadraticFit(double[] x, double[] y) {
+    private Polynome quadraticFit(double[] x, double[] y) {
         if (x.length != y.length)
             throw new IllegalArgumentException("quadraticFit: input arrays of different length (" + x.length + " != " + y.length + ")");
         double xi1 = 0, xi2 = 0, xi3 = 0, xi4 = 0;
@@ -570,4 +807,5 @@ public class Goutte_pendante implements Command, Previewable {
 
         return new Polynome(coeff);
     }
+
 }
