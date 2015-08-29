@@ -35,6 +35,7 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
 import java.util.HashMap;
+import java.util.Iterator;
 
 import ij.ImagePlus;
 import ij.ImageStack;
@@ -114,16 +115,6 @@ public class Goutte_pendante implements Command, Previewable {
 
     @Parameter(label = "Density contrast times g")
     private double rho_g;
-
-    @Parameter(label = "Surface tension",
-               persist = false,
-               visibility = org.scijava.ItemVisibility.MESSAGE)
-    private double surface_tension = 0;
-
-    @Parameter(label = "Adjustment penalty",
-               persist = false,
-               visibility = org.scijava.ItemVisibility.MESSAGE)
-    private double adj_penalty = 0;
 
     @Parameter(label = "Fit parameters checked below",
                description = "At least one parameter must be checked.",
@@ -212,8 +203,16 @@ public class Goutte_pendante implements Command, Previewable {
 
     @Override
     public void preview() {
-        calcContour();
-        //updateOverlay();
+        ContourDescriptors cd =
+            new ContourDescriptors(tip_radius, capillary_length, tip_x,
+                                   tip_y, gravity_deg);
+        ContourProperties cp = new ContourProperties(cd);
+        updateOverlay(cp.getDimShape());
+        final double surface_tension = capillary_length*capillary_length* rho_g;
+        log.info("surface tension = " + surface_tension +
+                 "\ndrop volume = " + cp.getVolume() +
+                 "\ndrop surface = " + cp.getSurface() +
+                 "\nfitDistance = " + cp.getFitDistance());
     }
 
     @Override
@@ -256,11 +255,11 @@ public class Goutte_pendante implements Command, Previewable {
     protected void dropShapeEstimator(ImageProcessor ip) {
 
         findDropBorders(ip);
-        int tip = leftBorder.length - 1;
+        final int tip = leftBorder.length - 1;
 
         // tip curvature: linear fit to half width squared near tip
-        double[] radiusSquare = new double[tipNeighbourhood];
-        double[] yCoord = new double[tipNeighbourhood];
+        final double[] radiusSquare = new double[tipNeighbourhood];
+        final double[] yCoord = new double[tipNeighbourhood];
         for (int i=0; i<tipNeighbourhood; i++) {
             double halfWidth = 0.5*( rightBorder[tip-i] - leftBorder[tip-i] );
             radiusSquare[i] = halfWidth * halfWidth;
@@ -627,6 +626,131 @@ public class Goutte_pendante implements Command, Previewable {
         return visibleDrop;
     }
 
+    /** Calculate drop contour volume (non-dimensional). */
+    private double calcVolume(final ArrayList<Point2D.Double> profile) {
+        Point2D.Double p, q;
+        double volume = 0;
+        Iterator<Point2D.Double> iter = profile.iterator();
+        p = iter.next();
+        while (iter.hasNext()) {
+            q = iter.next();
+            volume += (Math.PI/3) * (p.x*p.x + p.x*q.x + q.x*q.x);
+        }
+        return volume;
+    }
+
+    /** Calculate drop contour surface (non-dimensional). */
+    private double calcSurface(final ArrayList<Point2D.Double> profile) {
+        Point2D.Double p, q;
+        double surface = 0;
+        Iterator<Point2D.Double> iter = profile.iterator();
+        p = iter.next();
+        while (iter.hasNext()) {
+            q = iter.next();
+            surface += Math.PI * (p.x + q.x) *
+                Math.sqrt((q.x - p.x) * (q.x - p.x) +
+                          (q.y - p.y) * (q.y - p.y));
+        }
+        return surface;
+    }
+
+    double calcFitDistance(Shape drop) {
+        double[] leftIntersect = new double[bounds.height];
+        double[] rightIntersect = new double[bounds.height];
+        for (int y = 0; y < bounds.height; y++) {
+            leftIntersect[y] = Double.NaN;
+            rightIntersect[y] = Double.NaN;
+        }
+        // follow the contour and note intersection point for every line
+        PathIterator pi = drop.getPathIterator(null);
+        if (pi.isDone()) return Double.POSITIVE_INFINITY;
+        double[] coord = new double[6];
+        double xo, yo, xn, yn;
+        int segType, yof, ynf;
+        segType = pi.currentSegment(coord);
+        xo = coord[0] - bounds.x;
+        yo = coord[1] - bounds.y;
+        yof = (int)Math.floor(yo);
+        leftIntersect[(int)yo] = xo;
+
+        pi.next();
+
+        while (!pi.isDone()) {
+            segType = pi.currentSegment(coord);
+            if (segType != PathIterator.SEG_LINETO) {
+                pi.next();
+                continue;
+            }
+            xn = coord[0] - bounds.x;
+            yn = coord[1] - bounds.y;
+            // find out if this segment crossed a horizontal
+            //line of integer coordinate
+            ynf = (int)Math.floor(yn);
+            if (ynf != yof) {// integer bound crossed !
+                int ymin = Math.max(0, Math.min(ynf, yof) + 1);
+                int ymax = Math.min(bounds.height - 1, Math.max(ynf, yof));
+                for (int yi = ymin; yi <= ymax; yi++) {
+                    double frac = (yi - yo) / (yn - yo);
+                    double xi = xo + frac * (xn - xo);
+                    if (ynf > yof) // left side
+                        leftIntersect[yi] = xi;
+                    else
+                        rightIntersect[yi] = xi;
+                }
+            }
+            //IJ.log("lineto (" + xn + ", " + yn + ", " + ynf + ")");
+            xo = xn;
+            yo = yn;
+            yof = ynf;
+            pi.next();
+        }
+        rightIntersect[(int)yo] = xo;
+
+        // add values where there is no contour
+        double dummyIntersect = bounds.width/2;
+        for (int y=0; y < bounds.height; y++) {
+            if (Double.isNaN(leftIntersect[y]) || Double.isNaN(rightIntersect[y])) {
+                if (Double.isNaN(leftIntersect[y]))
+                    leftIntersect[y] = dummyIntersect;
+                if (Double.isNaN(rightIntersect[y]))
+                    rightIntersect[y] = dummyIntersect;
+            } else {
+                dummyIntersect = 0.5*(leftIntersect[y] + rightIntersect[y]);
+            }
+            //IJ.log("y = " + y + ": left = " + leftIntersect[y] + ", right = " + rightIntersect[y]);
+        }
+
+        // calculate penalty by summing over the distances between the measured
+        // and the theoretical border position.
+        double ChiSq = 0;
+        double xml = 0;
+        double xtl = 0;
+        double xmr = 0;
+        double xtr = 0;
+        for (int y = 0; y < leftBorder.length; y++){
+          if (!Double.isNaN (leftBorder[y])){
+              xml = leftBorder[y];
+            if (!Double.isNaN (leftIntersect[y])){
+                xtl = leftIntersect[y];
+            } else {
+                xtl = bounds.width/2;
+            }
+            ChiSq += (xml - xtl)*(xml - xtl); //alternative: abs(xml - xtl)
+           }
+
+        if (!Double.isNaN(rightBorder[y])){
+              xmr = rightBorder[y];
+              if (!Double.isNaN(rightIntersect[y])){
+                  xtr = rightIntersect[y];
+              } else {
+                  xtr = bounds.width/2;
+              }
+            ChiSq += (xmr - xtr)*(xmr - xtr); //alternative: abs(xmr - xtr)
+            }
+        }
+        return ChiSq;
+    }
+
     /** Set given curve as overlay on image. */
     private void updateOverlay(Shape c) {
         log.info("updating overlay");
@@ -819,4 +943,93 @@ public class Goutte_pendante implements Command, Previewable {
         return new Polynome(coeff);
     }
 
+    private class ContourDescriptors {
+        double tip_radius;
+        double capillary_length;
+        double tip_x;
+        double tip_y;
+        double gravity_deg;
+
+        ContourDescriptors(double tip_radius,
+                            double capillary_length,
+                            double tip_x,
+                            double tip_y,
+                            double gravity_deg) {
+            this.tip_radius = tip_radius;
+            this.capillary_length = capillary_length;
+            this.tip_x = tip_x;
+            this.tip_y = tip_y;
+            this.gravity_deg = gravity_deg;
+        }
+    }
+
+    private class ContourProperties {
+        private ArrayList<Point2D.Double> halfAdimProfile;
+        private Path2D closedAdimProfile;
+        private Shape dimShape;
+        private double fitDistance;
+        private double volume;
+        private double surface;
+
+        ContourProperties(ArrayList<Point2D.Double> halfAdimProfile,
+                          Path2D closedAdimProfile,
+                          Shape dimShape,
+                          double fitDistance,
+                          double volume,
+                          double surface) {
+            this.halfAdimProfile = halfAdimProfile;
+            this.closedAdimProfile = closedAdimProfile;
+            this.dimShape = dimShape;
+            this.fitDistance = fitDistance;
+            this.volume = volume;
+            this.surface = surface;
+        }
+
+        ContourProperties(ContourDescriptors cd) {
+            halfAdimProfile = calculateProfile(cd.tip_radius/cd.capillary_length,
+                                               bounds.height*pixel_size/cd.capillary_length);
+            closedAdimProfile = makeClosedPath(halfAdimProfile);
+            dimShape = contourToScreen(closedAdimProfile,
+                                       cd.capillary_length/pixel_size,
+                                       cd.tip_x/pixel_size,
+                                       cd.tip_y/pixel_size,
+                                       cd.gravity_deg,
+                                       getBoundsArea());
+            fitDistance = calcFitDistance(dimShape);
+            volume = -1;
+            surface = -1;
+        }
+
+        public ArrayList<Point2D.Double> getHalfAdimProfile() {
+            return halfAdimProfile;
+        }
+
+        public Path2D getClosedAdimProfile() {
+            return closedAdimProfile;
+        }
+
+        public Shape getDimShape() {
+            return dimShape;
+        }
+
+        public double getFitDistance() {
+            return fitDistance;
+        }
+
+        public double getVolume() {
+            if (volume < 0) {
+                volume = pixel_size * pixel_size * pixel_size *
+                    calcVolume(halfAdimProfile);
+            }
+            return volume;
+        }
+
+        public double getSurface() {
+            if (surface < 0) {
+                surface = pixel_size * pixel_size *
+                    calcSurface(halfAdimProfile);
+            }
+            return surface;
+        }
+    }
 }
