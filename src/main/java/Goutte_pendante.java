@@ -50,6 +50,7 @@ import net.imagej.display.OverlayService;
 import net.imagej.overlay.Overlay;
 import net.imagej.overlay.RectangleOverlay;
 
+import org.scijava.app.StatusService;
 import org.scijava.command.Command;
 import org.scijava.command.Previewable;
 import org.scijava.io.DefaultIOService;
@@ -82,6 +83,9 @@ public class Goutte_pendante implements Command, Previewable {
 
     @Parameter
     private OverlayService overlayService;
+
+    @Parameter
+    private StatusService statusService;
 
     // The 'min' attribute requires a String, but
     // Double.toString(Double.MIN_VALUE) is not a constant to the
@@ -213,6 +217,7 @@ public class Goutte_pendante implements Command, Previewable {
 
 
         for (int n=0; n<stack.getSize(); n++) {
+            statusService.showStatus("Pendant drop processing image " + (n+1));
 
             findDropBorders(stack.getProcessor(n+1));
 
@@ -231,6 +236,7 @@ public class Goutte_pendante implements Command, Previewable {
             drop = dropFit.getContour();
         }
 
+        statusService.showStatus("Pendant drop done");
     }
 
     // -- Previewable methods --
