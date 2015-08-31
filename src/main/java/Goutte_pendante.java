@@ -148,9 +148,6 @@ public class Goutte_pendante implements Command, Previewable {
 
     // -- Other fields --
 
-    /** The dimensional parameters. */
-    //private HashMap paramWithDim = null;
-
     /** A rectangle representation of dropRegion with integer precision. */
     private Rectangle bounds;
     private Area boundsArea = null;
@@ -165,6 +162,10 @@ public class Goutte_pendante implements Command, Previewable {
     private double[] rightBorder;
 
     // -- Constants --
+
+    /** Enumeration of the drop shape descriptors. */
+    private enum SHAPE_PARAM { TIP_RADIUS,
+            CAPILLARY_LENGTH, TIP_X, TIP_Y, GRAVITY_ANGLE }
 
     /** Threshold defining drop interface.
      *
@@ -183,36 +184,64 @@ public class Goutte_pendante implements Command, Previewable {
      */
     final int tipNeighbourhood = 5;
 
+    /** Maximum number of iterations of Powell's minimisation
+     * algorithm, in the outer loop minimizing over all parameter
+     * space directions.
+     */
+    final int maxIterDir = 100;
+
+    /** Maximum number of iterations inside the 1D minimisation
+     * function for each direction.
+     */
+    final int maxIterMin = 100;
+
     // -- Command methods --
 
     @Override
     public void run() {
-        prepareFitParams();
+        HashMap<SHAPE_PARAM,Boolean> fitMe = tagParamsToFit();
+        if ( ! fitMe.containsValue(Boolean.TRUE) ) {
+            log.error("At least one parameter must be selected !");
+            return;
+        }
+
+        Contour drop = new Contour(tip_radius, capillary_length,
+                                   tip_x, tip_y, gravity_deg);
 
         ImageStack stack = imp.getStack();
         // TODO: create results table
 
+
         for (int n=0; n<stack.getSize(); n++) {
-            analyseImage(stack.getProcessor(n+1));
+
+            findDropBorders(stack.getProcessor(n+1));
+
+            final ContourProperties dropFit =
+                fitContourToImage(drop, fitMe, false);
             // TODO: copy parameters into results table
 
+            imp.setSlice(n+1);
+            updateOverlay(dropFit.getDimShape());
+            imp.updateAndDraw();
+
+            log.info("Properties of image "+(n+1)+":");
+            showProperties(dropFit);
+
+            // take this contour as starting point for fitting the next image
+            drop = dropFit.getContour();
         }
+
     }
 
     // -- Previewable methods --
 
     @Override
     public void preview() {
-        ContourDescriptors cd =
-            new ContourDescriptors(tip_radius, capillary_length, tip_x,
-                                   tip_y, gravity_deg);
-        ContourProperties cp = new ContourProperties(cd);
+        Contour c = new Contour(tip_radius, capillary_length, tip_x,
+                                tip_y, gravity_deg);
+        ContourProperties cp = new ContourProperties(c);
         updateOverlay(cp.getDimShape());
-        final double surface_tension = capillary_length*capillary_length* rho_g;
-        log.info("surface tension = " + surface_tension +
-                 "\ndrop volume = " + cp.getVolume() +
-                 "\ndrop surface = " + cp.getSurface() +
-                 "\nfitDistance = " + cp.getFitDistance());
+        showProperties(cp);
     }
 
     @Override
@@ -410,16 +439,33 @@ public class Goutte_pendante implements Command, Previewable {
 
     /** Called by the button that triggers a fit of the drop contour. */
     private void fitButtonCB() {
-        //log.info("fitButtonCB !");
-        log.info("will fit:");
-        if (fit_include_tip_radius) log.info("  tip radius");
-        if (fit_include_capillary_length) log.info("  capillary_length");
-        if (fit_include_tip_x) log.info("  tip x coordinate");
-        if (fit_include_tip_y) log.info("  tip y coordinate");
-        if (fit_include_gravity_angle) log.info("  gravity angle");
-        prepareFitParams();
-        analyseImage(imp.getProcessor());
-        //updateOverlay();
+        HashMap<SHAPE_PARAM,Boolean> fitMe = tagParamsToFit();
+        if ( ! fitMe.containsValue(Boolean.TRUE) ) {
+            log.error("At least one parameter must be selected !");
+            return;
+        }
+
+        Contour drop = new Contour(tip_radius, capillary_length,
+                                   tip_x, tip_y, gravity_deg);
+
+        final ContourProperties dropFit =
+            fitContourToImage(drop, fitMe, true);
+
+        // It's a programming error to modify parameter values from a callback.
+        // Have to do this properly one day (DynamicCommand?), but in
+        // the meantime all we care is to store this (hopefully
+        // improved) result as a starting point for coming
+        // calculations.
+        drop = dropFit.getContour();
+        tip_radius = drop.getTipRadius();
+        capillary_length = drop.getCapillaryLength();
+        tip_x = drop.getTipX();
+        tip_y = drop.getTipY();
+        gravity_deg = drop.getGravityAngle();
+
+        updateOverlay(dropFit.getDimShape());
+        imp.updateAndDraw();
+        showProperties(dropFit);
     }
 
     /** Check if at least one fit parameter is checked.
@@ -437,20 +483,28 @@ public class Goutte_pendante implements Command, Previewable {
 
     // -- Processing --
 
-    private void prepareFitParams() {
-    }
-
-    /** Calculate the drop profile corresponding to the current shape
-     * descriptors, in non-dimensional form and then transformed to
-     * screen coordinates.
+    /** Build a map from the input parameters, indicating for each
+     * shape parameter whether it should be adjusted during fitting
+     * (true) or left unchanged (false). Such a map is required as
+     * input parameter to the fitContourToImage() method.
+     *
+     * @see SHAPE_PARAM
+     * @see fit_include_tip_radius
+     * @see fit_include_capillary_length
+     * @see fit_include_tip_x
+     * @see fit_include_tip_y
+     * @see fit_include_gravity_angle
+     * @see fitContourToImage()
      */
-    private void calcContour() {
-        final ArrayList<Point2D.Double> p = calculateProfile(tip_radius/capillary_length,
-                                    bounds.height*pixel_size/capillary_length);
-        final Path2D c = makeClosedPath(p);
-        final Shape s = contourToScreen(c, capillary_length/pixel_size, tip_x/pixel_size,
-                               tip_y/pixel_size, gravity_deg, getBoundsArea());
-        updateOverlay(s);
+    private HashMap<SHAPE_PARAM,Boolean> tagParamsToFit() {
+        final HashMap<SHAPE_PARAM,Boolean> fitMe =
+            new HashMap<SHAPE_PARAM,Boolean>();
+        fitMe.put(SHAPE_PARAM.TIP_RADIUS, fit_include_tip_radius);
+        fitMe.put(SHAPE_PARAM.CAPILLARY_LENGTH, fit_include_capillary_length);
+        fitMe.put(SHAPE_PARAM.TIP_X, fit_include_tip_x);
+        fitMe.put(SHAPE_PARAM.TIP_Y, fit_include_tip_y);
+        fitMe.put(SHAPE_PARAM.GRAVITY_ANGLE, fit_include_gravity_angle);
+        return fitMe;
     }
 
     /** Hydrostatic pressure equilibrium equations for an axisymetric drop.
@@ -698,7 +752,7 @@ public class Goutte_pendante implements Command, Previewable {
                         rightIntersect[yi] = xi;
                 }
             }
-            //IJ.log("lineto (" + xn + ", " + yn + ", " + ynf + ")");
+            //log.info("lineto (" + xn + ", " + yn + ", " + ynf + ")");
             xo = xn;
             yo = yn;
             yof = ynf;
@@ -717,7 +771,7 @@ public class Goutte_pendante implements Command, Previewable {
             } else {
                 dummyIntersect = 0.5*(leftIntersect[y] + rightIntersect[y]);
             }
-            //IJ.log("y = " + y + ": left = " + leftIntersect[y] + ", right = " + rightIntersect[y]);
+            //log.info("y = " + y + ": left = " + leftIntersect[y] + ", right = " + rightIntersect[y]);
         }
 
         // calculate penalty by summing over the distances between the measured
@@ -753,7 +807,7 @@ public class Goutte_pendante implements Command, Previewable {
 
     /** Set given curve as overlay on image. */
     private void updateOverlay(Shape c) {
-        log.info("updating overlay");
+        //log.info("updating overlay");
         if (c == null) return;
         // translation by +(0.5,0.5)
         AffineTransform t = new AffineTransform(1, 0, 0, 1, 0.5, 0.5);
@@ -779,9 +833,348 @@ public class Goutte_pendante implements Command, Previewable {
         imp.setOverlay(o);
     }
 
-    public void analyseImage(ImageProcessor ip) {
-        log.info("processing ip: "+ip.toString());
+    private void showProperties(ContourProperties drop) {
+        final double capillary_length = drop.getContour().getCapillaryLength();
+        final double surface_tension = capillary_length*capillary_length* rho_g;
+        log.info("surface tension = " + surface_tension +
+                 "\ndrop volume = " + drop.getVolume() +
+                 "\ndrop surface = " + drop.getSurface() +
+                 "\nfitDistance = " + drop.getFitDistance());
     }
+
+    /** Find a drop shape that minimises the distance to the given
+     * image, by varying a subset of the shape parameters. This is
+     * done by iteratively 1D-minimising along selected directions,
+     * where the latter are updated according to a method described by
+     * Powell.
+     *
+     * @param cd a drop shape used as the starting point
+     * @param ip the image of the measured drop
+     * @param fitMe a map indicating which shape parameters to fit
+     * @param drawOverlay fit silently (false) or update profile continuously (true)
+     * @see tagParamsToFit()
+     */
+    public ContourProperties fitContourToImage(Contour cd,
+                                               HashMap<SHAPE_PARAM,Boolean> fitMe,
+                                               boolean drawOverlay) {
+
+        final double precision1 = 1e-8;
+        final double precision2 = 1e-15;
+
+        Contour xCur, xOld, xE;
+        ContourProperties pCur, pOld, pE, pMin;
+        double fCur, fOld, fE;
+
+        xCur = cd;
+        pCur = new ContourProperties(xCur);
+        fCur = pCur.getFitDistance();
+
+        int Ndirs = 0;
+        for (SHAPE_PARAM p: SHAPE_PARAM.values())
+            if (fitMe.get(p)) Ndirs++;
+        // create list of directions
+        ArrayList<DContour> directions = new ArrayList<DContour>(Ndirs);
+        for (SHAPE_PARAM p: fitMe.keySet()) {
+            if (fitMe.get(p)) {
+                DContour direction = new DContour(0, 0, 0, 0, 0);
+                if (p == SHAPE_PARAM.GRAVITY_ANGLE &&
+                    fitMe.get(SHAPE_PARAM.TIP_X)) {
+                    direction.put(p, 1/cd.get(SHAPE_PARAM.TIP_RADIUS));
+                    direction.put(SHAPE_PARAM.TIP_X, 1.0);
+                } else {
+                    direction.put(p, 1.0);
+                }
+                directions.add(direction);
+            }
+        }
+        int step;
+        for (step=0; step < maxIterDir; step++) {
+            //log.info("----- new round -----");
+            fOld = fCur;
+            xOld = xCur;
+            double deltaFmax = 0;
+            DContour maxDir = null;// direction of steepest descent
+            int numDownSteps = 0;// number of descending steps this round
+            // loop over directions and find direction which yields
+            // the largest function decrease
+            for (DContour dir: directions) {
+                pMin = minimise1D(xCur, fCur, dir);
+                double deltaF = fCur - pMin.getFitDistance();
+                //log.info("dir "+dir+": fCur = "+fCur+": deltaF = "+deltaF+", deltaFmax = "+deltaFmax);
+                if (deltaF > deltaFmax) {
+                    maxDir = dir;
+                    deltaFmax = deltaF;
+                }
+                if (deltaF > 0) {
+                    pCur = pMin;
+                    xCur = pMin.getContour();
+                    fCur = pMin.getFitDistance();
+                    numDownSteps ++;
+                }
+                if (drawOverlay) updateOverlay(pCur.getDimShape());
+            }
+
+            // test for convergence
+            //log.info("change = "+Math.abs(fCur - fOld)+", threshold = "+(precision1*Math.abs(fCur) + precision2));
+            if (Math.abs(fCur - fOld) < precision1*Math.abs(fCur) + precision2)
+                break;
+
+            // construct extrapolated point and direction from xCur and xOld
+            if (numDownSteps == 0) continue;
+            DContour newDirection = new DContour(xOld, xCur);
+            //log.info("testing direction: "+newDirection);
+            xE = xCur.plus(newDirection);
+            pE = new ContourProperties(xE);
+            fE = pE.getFitDistance();
+            //log.info("fOld = "+fOld+", fCur = "+fCur+", fE = "+fE);
+
+            // now there are 3 points: (xOld, fOld), (xCur, fCur)
+            // and (xE, fE); check where minimum is on this line
+            if (fE < fCur) {
+                double test = 2*(fOld - 2*fCur + fE) *
+                    (fOld - fCur - deltaFmax) * (fOld - fCur - deltaFmax) -
+                    (fOld - fE) * (fOld - fE) * deltaFmax;
+                //log.info("test = "+test);
+                if (test < 0.0) {// use new direction
+                    //log.info("new direction accepted, removing direction " +
+                    //         maxDir);
+                    xCur = xE;
+                    pCur = pE;
+                    fCur = fE;
+                    directions.remove(maxDir);
+                    directions.add(0, newDirection);// prepend to list
+                }
+            }
+        }
+        if (step >= maxIterDir)
+            log.error("minimisation failed");
+        //else
+        //    log.info("minimisation succeeded");
+        return pCur;
+    }
+
+    /** Calculate where the minimum of the parabola going through the
+     * three given points is. No checks are performed to make sure the
+     * input points are not singular (e.g. x1==x2). */
+    private double minParabola(double x1, double x2, double x3,
+                       double y1, double y2, double y3) {
+        double x21 = x2 - x1;
+        double x23 = x2 - x3;
+        double f1 = x21*(y2 - y3);
+        double f2 = x23*(y2 - y1);
+        double numerator = x21*f1 - x23*f2;
+        double denominator = f1 - f2;
+        return x2 - numerator/(2*denominator);
+    }
+
+    /** Find minimum along a line. */
+    private ContourProperties minimise1D(Contour x0, double val, DContour dir)
+    {
+        final double precision1 = 1e-8;
+        final double precision2 = 1e-15;
+
+        final double goldenCut = 1.618034;
+        final double initialStepSize = 0.1;
+        final double maxDist = 10;
+
+        double ya, yb, yc=0, da, db, dc;
+        int step;
+        ContourProperties tmpCp;
+
+        Contour xa, xb, xc, xm;
+        da = 0.0;
+        xa = x0;
+        ya = val;
+        db = initialStepSize;
+        xb = x0.plusLin(db, dir);
+        tmpCp = new ContourProperties(xb);
+        yb = tmpCp.getFitDistance();
+
+        if (yb > ya) {//exchange a and b so we can assume yb is downhill
+            yc = ya;
+            ya = yb;
+            yb = yc;
+            da = initialStepSize;
+            db = 0.0;
+        }
+
+        boolean calcYc = true;
+        dc = db + goldenCut*(db - da);
+        for (step=0; step < maxIterMin; step++) {
+            if (calcYc) {
+                xc = x0.plusLin(dc, dir);
+                tmpCp = new ContourProperties(xc);
+                yc = tmpCp.getFitDistance();
+            }
+            calcYc = true;
+            if (yc > yb) break; // minimum between xa and xc: done
+
+            // check for parabolic interpolation minimum
+            double dba = db - da;
+            double dbc = db - dc;
+            double fa = dba*(yb - yc);
+            double fb = dbc*(yb - ya);
+            double numerator = dba*fa - dbc*fb;
+            double denominator = fa - fb;
+            double dm;
+            if (denominator/(dbc*dba*(dba-dbc)) > 0) {// minimum ?
+                dm = db - numerator/(2*denominator);
+            } else {
+                dm = dc + goldenCut*(dc - db);
+            }
+
+            xm = x0.plusLin(dm, dir);
+            tmpCp = new ContourProperties(xm);
+            double ym = tmpCp.getFitDistance();
+            double dlimit = db + maxDist*(dc - db);
+            if ((dm - db)*(dc - dm) > 0) {// dm is between db and dc
+                if (ym < yc) {// [b,m,c]
+                    da = db;
+                    ya = yb;
+                    db = dm;
+                    yb = ym;
+                    break;
+                } else if (ym > yb) {// [a,b,m]
+                    dc = dm;
+                    yc = ym;
+                    break;
+                }
+                // no minimum, have to extend search to greater values
+                dm = dc + goldenCut*(dc - db);
+            } else if ((dc - dm)*(dm - dlimit) > 0) {//minimum not too far
+                if (ym > yc) {// [b,c,m]
+                    da = db;
+                    ya = yb;
+                    db = dc;
+                    yb = yc;
+                    dc = dm;
+                    yc = ym;
+                    break;
+                }
+                calcYc = false;
+            } else if ((dm - dlimit)*(dlimit - dc) >= 0) {// beyond limit
+                dm = dlimit;
+            } else {
+                dm = dc + goldenCut*(dc -db);
+            }
+            da = db;
+            ya = yb;
+            db = dc;
+            yb = yc;
+            dc = dm;
+            yc = ym;
+        }
+        if (step >= maxIterMin)
+            log.error("minimum bracketing failed");
+        //else
+        //    System.err.println("minimum bracketing: ["+da+", "+dc+"]");
+
+        // reverse intervall if da > dc
+        if (da > dc) {
+            double dummy = da;
+            da = dc;
+            dc = dummy;
+        }
+
+        // localise minimum (combined method of Brent)
+        final double goldC = 0.391966;
+        double x = da + goldC*(dc - da);// initialize at golden section
+        double e = 0.0, d = 0.0;
+        double v = x;
+        double w = x;
+        double u;
+        xm = x0.plusLin(x, dir);
+        tmpCp = new ContourProperties(xm);
+        double fx = tmpCp.getFitDistance();
+        double fv = fx;
+        double fw = fx;
+        for (step=0; step < maxIterMin; step++) {
+            double dm = 0.5*(da + dc);
+            double tol = precision1*Math.abs(x) + precision2;
+            double twotol = 2*tol;
+            if (Math.abs(x-dm) < twotol - 0.5*(dc - da)) break;
+            boolean parabolaStep = false;
+            if (Math.abs(e) > tol) {// fit parabola
+                double r = (x - w)*(fx - fv);
+                double q = (x - v)*(fx - fw);
+                double p = (x - v)*q - (x - w)*r;
+                q = 2*(q - r);
+                if (q > 0)
+                    p = -p;
+                else
+                    q = -q;
+                r = e;
+                e = d;
+                //System.err.println("Parab: "+(p/q));
+                if (Math.abs(p) < Math.abs(0.5*q*r) &&
+                    p > q*(da - x) && p < q*(dc - x)) {
+                    // use result of parabolic fit
+                    d = p/q;
+                    u = x + d;
+                    if ((u - da) < twotol || (dc - u) < twotol) {
+                        // make sure u is not too close to da or dc
+                        d = -tol;
+                        if (x < dm) d = tol;
+                    }
+                    parabolaStep = true;
+                }
+            }
+            if (!parabolaStep) {// perform golden section step
+                //System.err.println("Golden section");
+                if (x < dm)
+                    e = dc - x;
+                else
+                    e = da - x;
+                d = goldC*e;
+            }
+            // determine point u where function is to be computed
+            // making sure it is not too close to x
+            if (Math.abs(d) >= tol)
+                u = x + d;
+            else if (d > 0)
+                u = x + tol;
+            else
+                u = x - tol;
+            xm = x0.plusLin(u, dir);
+            tmpCp = new ContourProperties(xm);
+            double fu = tmpCp.getFitDistance();
+            // update da, dc, v, w, x
+            if (fu <= fx) {
+                if (u < x)
+                    dc = x;
+                else
+                    da = x;
+                v = w;
+                fv = fw;
+                w = x;
+                fw = fx;
+                x = u;
+                fx = fu;
+            } else {
+                if (u < x)
+                    da = u;
+                else
+                    dc = u;
+                if (fu <= fw || w == x) {
+                    v = w;
+                    fv = fw;
+                    w = u;
+                    fw = fu;
+                } else if (fu <= fv || v == x || v == w) {
+                    v = u;
+                    fv = fu;
+                }
+            }
+        }// for step
+        if (step >= maxIterMin)
+            log.error("1D minimum localisation failed");
+        //else
+        //    log.info("minimum at " + (x0.plusLin(x,dir)));
+
+        xm = x0.plusLin(x, dir);
+        return new ContourProperties(xm);
+    }
+
 
     // -- Main method --
 
@@ -943,27 +1336,175 @@ public class Goutte_pendante implements Command, Previewable {
         return new Polynome(coeff);
     }
 
-    private class ContourDescriptors {
+    /** A structure regrouping the geometrical parameters
+     * characterizing an axisymmetric drop contour.
+     */
+    private class Contour {
         double tip_radius;
         double capillary_length;
         double tip_x;
         double tip_y;
         double gravity_deg;
 
-        ContourDescriptors(double tip_radius,
-                            double capillary_length,
-                            double tip_x,
-                            double tip_y,
-                            double gravity_deg) {
+        Contour(double tip_radius, double capillary_length,
+                double tip_x, double tip_y, double gravity_deg) {
             this.tip_radius = tip_radius;
             this.capillary_length = capillary_length;
             this.tip_x = tip_x;
             this.tip_y = tip_y;
             this.gravity_deg = gravity_deg;
         }
+
+        // -- generic accessor --
+
+        /** get the parameter through its name */
+        double get(SHAPE_PARAM param) {
+            switch (param) {
+            case TIP_RADIUS:
+                return tip_radius;
+            case CAPILLARY_LENGTH:
+                return capillary_length;
+            case TIP_X:
+                return tip_x;
+            case TIP_Y:
+                return tip_y;
+            case GRAVITY_ANGLE:
+                return gravity_deg;
+            default:
+                throw new IllegalArgumentException("Don't know parameter "+param);
+            }
+        }
+
+        // -- explicit accessors --
+
+        double getTipRadius() { return tip_radius; }
+        double getCapillaryLength() { return capillary_length; }
+        double getTipX() { return tip_x; }
+        double getTipY() { return tip_y; }
+        double getGravityAngle() { return gravity_deg; }
+
+        // -- Contour arithmetic --
+
+        /** Build new Contour from this one translated by increment. */
+        Contour plus(DContour increment) {
+            return plusLin(1.0, increment);
+        }
+
+        /** Build new Contour from this one translated by a constant
+         * times an increment.
+         *
+         * @return new(this + A * increment)
+         */
+        Contour plusLin(double A, DContour increment) {
+            return new
+                Contour(tip_radius + A*increment.get(SHAPE_PARAM.TIP_RADIUS),
+                        capillary_length
+                        + A*increment.get(SHAPE_PARAM.CAPILLARY_LENGTH),
+                        tip_x + A*increment.get(SHAPE_PARAM.TIP_X),
+                        tip_y+ A*increment.get(SHAPE_PARAM.TIP_Y),
+                        gravity_deg
+                        + A*increment.get(SHAPE_PARAM.GRAVITY_ANGLE));
+        }
+
+        // -- Produce readable self-documentation --
+
+        @Override
+        public String toString() {
+            return "Contour[tR=" + tip_radius +
+                ", cl=" + capillary_length +
+                ", tX=" + tip_x +
+                ", tY=" + tip_y +
+                ", ang=" + gravity_deg + "]";
+        }
     }
 
+    /** A structure defining a vector in contour shape parameter
+     * space. In other words, this is a difference between two
+     * Contour(s)
+     *
+     * @see Contour
+     */
+    private class DContour {
+        double delta_tip_radius;
+        double delta_capillary_length;
+        double delta_tip_x;
+        double delta_tip_y;
+        double delta_gravity_deg;
+
+        DContour(double delta_tip_radius, double delta_capillary_length,
+                 double delta_tip_x, double delta_tip_y,
+                 double delta_gravity_deg) {
+            this.delta_tip_radius = delta_tip_radius;
+            this.delta_capillary_length = delta_capillary_length;
+            this.delta_tip_x = delta_tip_x;
+            this.delta_tip_y = delta_tip_y;
+            this.delta_gravity_deg = delta_gravity_deg;
+        }
+
+        /** Construct a new DContour pointing from a to b. */
+        DContour(Contour a, Contour b) {
+            for (SHAPE_PARAM param: SHAPE_PARAM.values())
+                put(param, b.get(param) - a.get(param));
+        }
+
+        /** Get the parameter by name */
+        double get(SHAPE_PARAM param) {
+            switch (param) {
+            case TIP_RADIUS:
+                return delta_tip_radius;
+            case CAPILLARY_LENGTH:
+                return delta_capillary_length;
+            case TIP_X:
+                return delta_tip_x;
+            case TIP_Y:
+                return delta_tip_y;
+            case GRAVITY_ANGLE:
+                return delta_gravity_deg;
+            default:
+                throw new IllegalArgumentException("Don't know parameter "+param);
+            }
+        }
+
+        /** Modify a parameter by name. */
+        void put(SHAPE_PARAM param, double newValue) {
+            switch (param) {
+            case TIP_RADIUS:
+                delta_tip_radius = newValue;
+                break;
+            case CAPILLARY_LENGTH:
+                delta_capillary_length = newValue;
+                break;
+            case TIP_X:
+                delta_tip_x = newValue;
+                break;
+            case TIP_Y:
+                delta_tip_y = newValue;
+                break;
+            case GRAVITY_ANGLE:
+                delta_gravity_deg = newValue;
+                break;
+            default:
+                throw new IllegalArgumentException("Don't know parameter "+param);
+            }
+        }
+
+        @Override
+        public String toString() {
+            return "DContour[DtR=" + delta_tip_radius +
+                ", Dcl=" + delta_capillary_length +
+                ", DtX=" + delta_tip_x +
+                ", DtY=" + delta_tip_y +
+                ", Dang=" + delta_gravity_deg + "]";
+        }
+    }
+
+
+    /** A structure regrouping various calculated properties of a
+     * given contour. The parameters describing the shape of this
+     * contour have to be provided to the constructor.
+     */
     private class ContourProperties {
+        private Contour geometry;
         private ArrayList<Point2D.Double> halfAdimProfile;
         private Path2D closedAdimProfile;
         private Shape dimShape;
@@ -971,12 +1512,14 @@ public class Goutte_pendante implements Command, Previewable {
         private double volume;
         private double surface;
 
-        ContourProperties(ArrayList<Point2D.Double> halfAdimProfile,
+        ContourProperties(Contour geometry,
+                          ArrayList<Point2D.Double> halfAdimProfile,
                           Path2D closedAdimProfile,
                           Shape dimShape,
                           double fitDistance,
                           double volume,
                           double surface) {
+            this.geometry = geometry;
             this.halfAdimProfile = halfAdimProfile;
             this.closedAdimProfile = closedAdimProfile;
             this.dimShape = dimShape;
@@ -985,19 +1528,24 @@ public class Goutte_pendante implements Command, Previewable {
             this.surface = surface;
         }
 
-        ContourProperties(ContourDescriptors cd) {
-            halfAdimProfile = calculateProfile(cd.tip_radius/cd.capillary_length,
-                                               bounds.height*pixel_size/cd.capillary_length);
+        ContourProperties(Contour c) {
+            geometry = c;
+            halfAdimProfile = calculateProfile(c.tip_radius/c.capillary_length,
+                                               bounds.height*pixel_size/c.capillary_length);
             closedAdimProfile = makeClosedPath(halfAdimProfile);
             dimShape = contourToScreen(closedAdimProfile,
-                                       cd.capillary_length/pixel_size,
-                                       cd.tip_x/pixel_size,
-                                       cd.tip_y/pixel_size,
-                                       cd.gravity_deg,
+                                       c.capillary_length/pixel_size,
+                                       c.tip_x/pixel_size,
+                                       c.tip_y/pixel_size,
+                                       c.gravity_deg,
                                        getBoundsArea());
             fitDistance = calcFitDistance(dimShape);
             volume = -1;
             surface = -1;
+        }
+
+        public Contour getContour() {
+            return geometry;
         }
 
         public ArrayList<Point2D.Double> getHalfAdimProfile() {
