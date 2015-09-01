@@ -49,7 +49,10 @@ import net.imagej.display.ImageDisplay;
 import net.imagej.display.OverlayService;
 import net.imagej.overlay.Overlay;
 import net.imagej.overlay.RectangleOverlay;
+import net.imagej.table.DefaultGenericTable;
+import net.imagej.table.GenericTable;
 
+import org.scijava.ItemIO;
 import org.scijava.app.StatusService;
 import org.scijava.command.Command;
 import org.scijava.command.Previewable;
@@ -150,6 +153,9 @@ public class Goutte_pendante implements Command, Previewable {
                callback = "fitCheckboxCB")
     private boolean fit_include_gravity_angle = true;
 
+    @Parameter(label = "Results", type = ItemIO.OUTPUT)
+    private GenericTable results;
+
     // -- Other fields --
 
     /** A rectangle representation of dropRegion with integer precision. */
@@ -213,9 +219,22 @@ public class Goutte_pendante implements Command, Previewable {
                                    tip_x, tip_y, gravity_deg);
 
         ImageStack stack = imp.getStack();
-        // TODO: create results table
 
+        // create results table
+        final int colCount = 10;
+        results = new DefaultGenericTable(colCount, stack.getSize());
+        results.setColumnHeader(0, "slice");
+        results.setColumnHeader(1, "tip radius");
+        results.setColumnHeader(2, "tip x");
+        results.setColumnHeader(3, "tip y");
+        results.setColumnHeader(4, "gravity angle");
+        results.setColumnHeader(5, "capillary length");
+        results.setColumnHeader(6, "surface tension");
+        results.setColumnHeader(7, "volume");
+        results.setColumnHeader(8, "surface");
+        results.setColumnHeader(9, "fit distance");
 
+        // iterate over slices of the stack
         for (int n=0; n<stack.getSize(); n++) {
             statusService.showStatus("Pendant drop processing image " + (n+1));
 
@@ -223,7 +242,23 @@ public class Goutte_pendante implements Command, Previewable {
 
             final ContourProperties dropFit =
                 fitContourToImage(drop, fitMe, false);
-            // TODO: copy parameters into results table
+
+            // take this contour as starting point for fitting the next image
+            drop = dropFit.getContour();
+
+            // copy parameters into results table
+            results.set(0, n, n+1);
+            results.set(1, n, drop.getTipRadius());
+            results.set(2, n, drop.getTipX());
+            results.set(3, n, drop.getTipY());
+            results.set(4, n, drop.getGravityAngle());
+            final double capLength = drop.getCapillaryLength();
+            results.set(5, n, capLength);
+            final double surface_tension = capLength * capLength * rho_g;
+            results.set(6, n, surface_tension);
+            results.set(7, n, dropFit.getVolume());
+            results.set(8, n, dropFit.getSurface());
+            results.set(9, n, dropFit.getFitDistance());
 
             imp.setSlice(n+1);
             updateOverlay(dropFit.getDimShape());
@@ -231,9 +266,6 @@ public class Goutte_pendante implements Command, Previewable {
 
             log.info("Properties of image "+(n+1)+":");
             showProperties(dropFit);
-
-            // take this contour as starting point for fitting the next image
-            drop = dropFit.getContour();
         }
 
         statusService.showStatus("Pendant drop done");
@@ -245,6 +277,7 @@ public class Goutte_pendante implements Command, Previewable {
     public void preview() {
         Contour c = new Contour(tip_radius, capillary_length, tip_x,
                                 tip_y, gravity_deg);
+        log.info("previewing contour "+c);
         ContourProperties cp = new ContourProperties(c);
         updateOverlay(cp.getDimShape());
         showProperties(cp);
@@ -269,8 +302,8 @@ public class Goutte_pendante implements Command, Previewable {
                                (int) Math.round(r.y),
                                (int) Math.round(r.width),
                                (int) Math.round(r.height));
-        //log.info("drop region: +" + bounds.x + " +" +  r.y
-        //         + ", " +  r.width + " x " + r.height);
+        log.info("drop region: +" + bounds.x + " +" +  r.y
+                 + ", " +  r.width + " x " + r.height);
 
         // pixel size and density contrast parameters
         ij.measure.Calibration cal = imp.getCalibration();
@@ -302,6 +335,9 @@ public class Goutte_pendante implements Command, Previewable {
         }
         Polynome tipFit = linearFit(yCoord, radiusSquare);
         tip_radius = 0.5 * Math.abs(tipFit.getCoeff(1)) * pixel_size;
+
+        // in case estimation fails badly assign some reasonable value
+        if (tip_radius <= 0) tip_radius = tip*pixel_size/4;
 
         // direction of gravity: tilt of center line
         //
@@ -366,6 +402,10 @@ public class Goutte_pendante implements Command, Previewable {
         // pressure difference between yBelly and tip gives capillary
         // length estimate
         capillary_length = Math.sqrt( (tip-yBelly) / (2*c0-c1-c2) ) *pixel_size;
+
+        // in case estimation fails badly assign some reasonable value
+        if (Double.isNaN(capillary_length) || capillary_length == 0)
+            capillary_length = 2*tip_radius;
     }
 
     /** Detect drop borders and store positions in the
