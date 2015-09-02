@@ -238,7 +238,10 @@ public class Goutte_pendante implements Command, Previewable {
         for (int n=0; n<stack.getSize(); n++) {
             statusService.showStatus("Pendant drop processing image " + (n+1));
 
-            findDropBorders(stack.getProcessor(n+1));
+            if (! findDropBorders(stack.getProcessor(n+1))) {
+                log.error("Could not detect drop on image " + (n+1) + ", skipping.");
+                continue;
+            }
 
             final ContourProperties dropFit =
                 fitContourToImage(drop, fitMe, false);
@@ -326,7 +329,10 @@ public class Goutte_pendante implements Command, Previewable {
     /** Analyze given image to roughly estimate drop shape descriptors. */
     protected void dropShapeEstimator(ImageProcessor ip) {
 
-        findDropBorders(ip);
+        if (! findDropBorders(ip)) {
+            log.error("Could not detect drop, unrecoverable plugin failure.");
+            throw new RuntimeException("Could not detect drop.");
+        }
         final int tip = leftBorder.length - 1;
 
         // tip curvature: linear fit to half width squared near tip
@@ -427,7 +433,7 @@ public class Goutte_pendante implements Command, Previewable {
     /** Detect drop borders and store positions in the
      * left/rightBorder arrays.
      */
-    private void findDropBorders(ImageProcessor ip) {
+    private boolean findDropBorders(ImageProcessor ip) {
         leftBorder = null;
         rightBorder = null;
 
@@ -472,6 +478,11 @@ public class Goutte_pendante implements Command, Previewable {
             leftBorder[y]  = fitStep(ip, xl, y, voisinage, false);
             rightBorder[y] = fitStep(ip, xr, y, voisinage, true);
         } // end for y
+
+        if (leftBorder == null)
+            return false;
+        else
+            return true;
     }
 
     /** Calculate sub-pixel position of a (rising/falling) step having
