@@ -1588,18 +1588,28 @@ public class Goutte_pendante implements Command, Previewable {
 
         ContourProperties(Contour c) {
             geometry = c;
-            halfAdimProfile = calculateProfile(c.tip_radius/c.capillary_length,
-                                               bounds.height*pixel_size/c.capillary_length);
-            closedAdimProfile = makeClosedPath(halfAdimProfile);
-            dimShape = contourToScreen(closedAdimProfile,
-                                       c.capillary_length/pixel_size,
-                                       c.tip_x/pixel_size,
-                                       c.tip_y/pixel_size,
-                                       c.gravity_deg,
-                                       getBoundsArea());
-            fitDistance = calcFitDistance(dimShape);
-            volume = -1;
-            surface = -1;
+            if (c.tip_radius > 0 && c.capillary_length > 0) {
+                halfAdimProfile = calculateProfile(c.tip_radius / c.capillary_length,
+                                                   bounds.height * pixel_size /
+                                                   c.capillary_length);
+                closedAdimProfile = makeClosedPath(halfAdimProfile);
+                dimShape = contourToScreen(closedAdimProfile,
+                                           c.capillary_length / pixel_size,
+                                           c.tip_x / pixel_size,
+                                           c.tip_y / pixel_size,
+                                           c.gravity_deg,
+                                           getBoundsArea());
+                fitDistance = calcFitDistance(dimShape);
+                volume = -1;
+                surface = -1;
+            } else {
+                halfAdimProfile = null;
+                closedAdimProfile = null;
+                dimShape = null;
+                fitDistance = Double.POSITIVE_INFINITY;
+                volume = 0;
+                surface = 0;
+            }
         }
 
         public Contour getContour() {
