@@ -302,8 +302,12 @@ public class Goutte_pendante implements Command, Previewable {
                                (int) Math.round(r.y),
                                (int) Math.round(r.width),
                                (int) Math.round(r.height));
-        log.info("drop region: +" + bounds.x + " +" +  r.y
-                 + ", " +  r.width + " x " + r.height);
+        // work around getSelectionBounds not seeing an imp's roi
+        if (imp.getRoi() != null) {
+            bounds = imp.getRoi().getBounds();
+        }
+        log.info("drop region: +" + bounds.x + " +" +  bounds.y
+                 + ", " +  bounds.width + " x " + bounds.height);
 
         // pixel size and density contrast parameters
         ij.measure.Calibration cal = imp.getCalibration();
@@ -370,7 +374,7 @@ public class Goutte_pendante implements Command, Previewable {
             tip_x = ( bounds.x + bounds.width/2 ) * pixel_size;
         if (tip_y < bounds.y || tip_y >= bounds.y + bounds.height)
             tip_y = ( bounds.y + tip ) * pixel_size;
-            
+
         // capillary length: from curvature difference between tip
         // (=1/tip_radius) and the point of maximum horizontal drop
         // diameter (to be calculated here)
