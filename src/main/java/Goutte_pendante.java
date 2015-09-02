@@ -337,28 +337,40 @@ public class Goutte_pendante implements Command, Previewable {
         tip_radius = 0.5 * Math.abs(tipFit.getCoeff(1)) * pixel_size;
 
         // in case estimation fails badly assign some reasonable value
-        if (tip_radius <= 0) tip_radius = tip*pixel_size/4;
+        if (Double.isNaN(tip_radius) || tip_radius <= 0 ||
+            tip_radius > Math.min(bounds.width,bounds.height) * pixel_size)
+            tip_radius = tip * pixel_size / 4;
 
         // direction of gravity: tilt of center line
         //
         // link middle of top line to estimated center of drop
         // (one radius above tip)
-        final double dX = 0.5*( rightBorder[0] + leftBorder[0]
+        double dX = 0.5*( rightBorder[0] + leftBorder[0]
                                 - rightBorder[tip] - leftBorder[tip] );
+        // in case estimation fails badly assign some reasonable value
+        if (Double.isNaN(dX)) dX = 0;
         final double dY = tip - tip_radius / pixel_size;
         final double tiltAngleRad = Math.atan2(-dX,dY);
-        gravity_deg = tiltAngleRad*180/Math.PI;
+        gravity_deg = tiltAngleRad * 180/Math.PI;
 
         // drop tip
-        tip_x = bounds.x +
-            0.5*( rightBorder[tip] + leftBorder[tip] ) * pixel_size;
-        tip_y = bounds.y +
-            tip + tipFit.getCoeff(0) / tipFit.getCoeff(1) * pixel_size;
+        tip_x = ( bounds.x +
+                  0.5*( rightBorder[tip] + leftBorder[tip] )) * pixel_size;
+        tip_y = ( bounds.y + tip ) * pixel_size;
+        final double tip_correction = tipFit.getCoeff(0) / tipFit.getCoeff(1);
+        if (!Double.isNaN(tip_correction) && Math.abs(tip_correction) < tipNeighbourhood)
+            tip_y += tip_correction * pixel_size;
         // the former expression assumes the drop is vertical, but we can
         // correct for tilt:
         tip_x -= tip_radius * Math.sin(tiltAngleRad);
         tip_y -= tip_radius * (1 - Math.cos(tiltAngleRad));
 
+        // in case estimation fails badly assign some reasonable value
+        if (tip_x/pixel_size < bounds.x || tip_x/pixel_size >= bounds.x + bounds.width)
+            tip_x = ( bounds.x + bounds.width/2 ) * pixel_size;
+        if (tip_y < bounds.y || tip_y >= bounds.y + bounds.height)
+            tip_y = ( bounds.y + tip ) * pixel_size;
+            
         // capillary length: from curvature difference between tip
         // (=1/tip_radius) and the point of maximum horizontal drop
         // diameter (to be calculated here)
