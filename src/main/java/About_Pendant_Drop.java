@@ -55,7 +55,7 @@ public class About_Pendant_Drop implements Command, ActionListener {
     private org.scijava.io.IOService ioService;
 
     @Parameter
-    private LogService logger;
+    private LogService log;
 
     private final static String pluginMenuName = "Pendant drop";
 
@@ -129,6 +129,8 @@ public class About_Pendant_Drop implements Command, ActionListener {
             p2.add(Box.createHorizontalStrut(10));
             p2.setAlignmentX(Component.LEFT_ALIGNMENT);
 
+            // analyze key to decide whether we should link to some
+            // resource or merely show value as plain text
             if (key.endsWith("URI") || key.endsWith("URL")) {
                 try {
                     URI uri = new URI(doc.get(key));
@@ -139,7 +141,7 @@ public class About_Pendant_Drop implements Command, ActionListener {
                     p2.add(b);
                 }
                 catch (URISyntaxException e) {
-                    logger.error("cast of \""+doc.get(key)+"\" to URI failed");
+                    log.error("cast of \""+doc.get(key)+"\" to URI failed");
                 }
             } else if (key.toLowerCase(java.util.Locale.ENGLISH).endsWith("file")) {
                 URL u = getClass().getResource(doc.get(key));
@@ -148,15 +150,29 @@ public class About_Pendant_Drop implements Command, ActionListener {
                         URI uri = u.toURI();
                         JButton b = new JButton(uri.toString());
                         uris.put(b, uri);
-                        b.addActionListener(this);
+                        b.addActionListener(new ActionListener() {
+                                public void actionPerformed(ActionEvent e) {
+                                    Object source = e.getSource();
+                                    if (!(source instanceof JButton)) return;
+                                    JButton button = (JButton)source;
+                                    if ( uris.containsKey(button) ) {
+                                        URI uri = uris.get(source);
+                                        try {
+                                            openFile(uri);
+                                        } catch (IOException x) {
+                                            log.error(x);
+                                        }
+                                    }
+                                }
+                            });
                         b.setFont(urlFont);
                         p2.add(b);
                     }
                     catch (URISyntaxException e) {
-                        logger.error("cast of \""+u+"\" to URI failed");
+                        log.error("cast of \""+u+"\" to URI failed");
                     }
                 } else
-                    logger.error("could not locate resource "+key+" at\n\""+
+                    log.error("could not locate resource "+key+" at\n\""+
                            doc.get(key)+"\"\n");
             } else if (key.toLowerCase(java.util.Locale.ENGLISH).endsWith("image")) {
                 URL u = getClass().getResource(doc.get(key));
@@ -175,7 +191,7 @@ public class About_Pendant_Drop implements Command, ActionListener {
                                         try {
                                             openSciJava(uri);
                                         } catch (IOException x) {
-                                            logger.error(x);
+                                            log.error(x);
                                         }
                                     }
                                 }
@@ -184,13 +200,13 @@ public class About_Pendant_Drop implements Command, ActionListener {
                         p2.add(b);
                     }
                     catch (URISyntaxException e) {
-                        logger.error("cast of \""+u+"\" to URI failed");
+                        log.error("cast of \""+u+"\" to URI failed");
                     }
                 } else
-                    logger.error("could not locate resource "+key+" at\n\""+
+                    log.error("could not locate resource "+key+" at\n\""+
                            doc.get(key)+"\"\n");
 
-            } else {
+            } else {// just show as plain text
                 JEditorPane text = new JEditorPane("text/plain", doc.get(key));
                 text.setEditable(false);
                 //text.setAlignmentX(Component.LEFT_ALIGNMENT);
@@ -219,10 +235,10 @@ public class About_Pendant_Drop implements Command, ActionListener {
             URI uri = uris.get(source);
             try { openDesktop(uri); }
             catch (UnsupportedOperationException ex) {
-                logger.error("opening "+ uri.toString() +" failed:\n" + ex);
+                log.error("opening "+ uri.toString() +" failed:\n" + ex);
             }
             catch (IOException ex) {
-                logger.error("opening "+ uri.toString() +" failed:\n" + ex);
+                log.error("opening "+ uri.toString() +" failed:\n" + ex);
             }
         }
     }
@@ -247,7 +263,7 @@ public class About_Pendant_Drop implements Command, ActionListener {
         java.awt.Desktop desktop = java.awt.Desktop.getDesktop();
 
         if (!desktop.isSupported( java.awt.Desktop.Action.BROWSE ))
-            throw new UnsupportedOperationException("Desktop doesn't support the browse action");
+            throw new UnsupportedOperationException("Desktop doesn't support the BROWSE action");
 
         desktop.browse(uri);
     }
@@ -267,31 +283,68 @@ public class About_Pendant_Drop implements Command, ActionListener {
         ui.show(dataset);
     }
 
+    /** Open URI of a file, possibly inside a jar, with default
+     * desktop application.
+     *
+     * @throws UnsupportedOperationException Either
+     * java.awt.Desktop.isDesktopSupported() or desktop.isSupported(
+     * java.awt.Desktop.Action.BROWSE ) returned false.
+     *
+     * @throws IOException The documentation of desktop.browse()
+     * described under which circumstances this Exception is thrown.
+     */
+    public void openFile(URI uri) throws IOException {
+        File file;
+        if (uri.getScheme().equals("jar"))
+            // extract from jar
+            file = jarURItoTmpFile(uri);
+        else
+            file = new File(uri);
+
+        if (!java.awt.Desktop.isDesktopSupported())
+            throw new UnsupportedOperationException("Desktop is not supported");
+
+        java.awt.Desktop desktop = java.awt.Desktop.getDesktop();
+
+        if (!desktop.isSupported( java.awt.Desktop.Action.OPEN ))
+            throw new UnsupportedOperationException("Desktop doesn't support the OPEN action");
+
+        desktop.open(file);
+    }
+
     public URI jarURItoTmpFileURI(URI uri) {
         if (!uri.getScheme().equals("jar"))
             return uri; // do nothing if not in jar
-        try {
-            URL url = uri.toURL();
-            String suffix =
-                (new File(uri.getSchemeSpecificPart())).getName();
-            InputStream is = url.openStream();
-            //logger.debug("have stream: "+is.available());
-            File tmpFile = File.createTempFile("gpp",suffix);
-            tmpFile.deleteOnExit();
-            FileOutputStream os = new FileOutputStream(tmpFile);
-            while (true) {
-                int b = is.read();
-                if (b < 0) break;
-                os.write(b);
-            }
-            is.close();
-            uri = tmpFile.toURI();
-            os.close();
-        } catch (IOException e) {
-            logger.error("IOException while extracting from jar...");
-            logger.error(e);
-        }
+        File tmpFile = jarURItoTmpFile(uri);
+        uri = tmpFile.toURI();
         return uri;
+    }
+
+    public File jarURItoTmpFile(URI uri) {
+        File tmpFile = null;
+        if (uri.getScheme().equals("jar")) {
+            try {
+                URL url = uri.toURL();
+                String suffix =
+                    (new File(uri.getSchemeSpecificPart())).getName();
+                InputStream is = url.openStream();
+                //log.debug("have stream: "+is.available());
+                tmpFile = File.createTempFile("gpp",suffix);
+                tmpFile.deleteOnExit();
+                FileOutputStream os = new FileOutputStream(tmpFile);
+                while (true) {
+                    int b = is.read();
+                    if (b < 0) break;
+                    os.write(b);
+                }
+                is.close();
+                os.close();
+            } catch (IOException e) {
+                log.error("IOException while extracting from jar...");
+                log.error(e);
+            }
+        }
+        return tmpFile;
     }
 
     /** Documents this plug-in using the PlugInDoc interface.
@@ -301,26 +354,29 @@ public class About_Pendant_Drop implements Command, ActionListener {
     public java.util.Map<String,String> getDocumentation() {
         java.util.Map<String,String> doc =
             new java.util.LinkedHashMap<String,String>();
-        doc.put("About", pluginMenuName+" is a Plugin"+
-                "for liquid surface tension measurement.\n"+
-    "This plug-in allows interactive adjustment of a theoretical profile\n"+
-    "to an image of a pendant drop. An estimate of the quality of the fit\n"+
-    "is logged to ImageJ's log window. The Plugin can also improve the fit\n"+
-    "automatically by varying one or several of the parameters.");
+        doc.put("About", pluginMenuName + " is a Plugin" +
+                "for liquid surface tension measurement.\n" +
+                "This plug-in allows for interactive or automated adjustment\n" +
+                "of a theoretical profile to an image of an axisymmetric\n" +
+                "pendant drop.\n" +
+                "Drop properties such as surface tension, volume, interface\n" +
+                "area are then calculated from the profile.");
         doc.put("Usage",
-    "Draw a rectangular ROI around the free pendant part of the drop,\n"+
-    "call Plugin, check 'preview' box; then adjust parameters interactively\n"+
-    "and/or fit selected parameters automatically.\n"+
-    "[For more details see PDF documentation below]");
+                "Draw a rectangular ROI around the free pendant part of the\n" +
+                "drop before calling the Plugin; then adjust parameters\n" +
+                "interactively and/or fit selected parameters automatically.\n" +
+                "[For more details see PDF documentation below]");
         doc.put("Author", "Adrian Daerr");
-        doc.put("Version", "2015-09-01");
+        doc.put("Version", "2.0.0 (release date 2015-09-04)");
         doc.put("Licence", "GPL");
-        doc.put("Author homepage URL",
-                "http://www.msc.univ-paris-diderot.fr/~daerr/");
         doc.put("Plugin update site URL",
                 "http://sites.imagej.net/Daerr/");
-        doc.put("Detailed documentation PDF file", "article/Goutte_pendante.pdf");
-        doc.put("Example image: water drop, JPEG image", "article/eauContrasteMax.jpg");
+        doc.put("Author homepage URL",
+                "http://www.msc.univ-paris-diderot.fr/~daerr/");
+        doc.put("Detailed documentation PDF file",
+                "article/Goutte_pendante.pdf");
+        doc.put("Example image: water drop, JPEG image",
+                "article/eauContrasteMax.jpg");
         return doc;
     }
 
