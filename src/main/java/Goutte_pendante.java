@@ -305,6 +305,15 @@ public class Goutte_pendante implements Command, Previewable {
                                (int) Math.round(r.y),
                                (int) Math.round(r.width),
                                (int) Math.round(r.height));
+        // work around getSelectionBounds providing old image
+        // dimensions after a crop
+        if (bounds.x + bounds.width > imp.getWidth() ||
+            bounds.y + bounds.height > imp.getHeight()) {
+            bounds.x = 0;
+            bounds.y = 0;
+            bounds.width = imp.getWidth();
+            bounds.height = imp.getHeight();
+        }
         // work around getSelectionBounds not seeing an imp's roi
         if (imp.getRoi() != null) {
             bounds = imp.getRoi().getBounds();
