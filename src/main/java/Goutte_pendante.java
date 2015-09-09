@@ -205,6 +205,10 @@ public class Goutte_pendante implements Command, Previewable {
      */
     final int maxIterMin = 100;
 
+    /** Number of significant digits to print for results.
+     */
+    final int significantDigits = 5;
+
     // -- Command methods --
 
     @Override
@@ -266,9 +270,6 @@ public class Goutte_pendante implements Command, Previewable {
             imp.setSlice(n+1);
             updateOverlay(dropFit.getDimShape());
             imp.updateAndDraw();
-
-            log.info("Properties of image "+(n+1)+":");
-            showProperties(dropFit);
         }
 
         statusService.showStatus("Pendant drop done");
@@ -938,10 +939,14 @@ public class Goutte_pendante implements Command, Previewable {
     private void showProperties(ContourProperties drop) {
         final double capillary_length = drop.getContour().getCapillaryLength();
         final double surface_tension = capillary_length*capillary_length* rho_g;
-        log.info("surface tension = " + surface_tension +
-                 "\n       drop volume = " + drop.getVolume() +
-                 "\n       drop surface = " + drop.getSurface() +
-                 "\n       fitDistance = " + drop.getFitDistance());
+        log.info("surface tension = "
+                 + d2s(surface_tension, significantDigits) +
+                 "\n       drop volume = "
+                 + d2s(drop.getVolume(), significantDigits) +
+                 "\n       drop surface = "
+                 + d2s(drop.getSurface(), significantDigits) +
+                 "\n       fitDistance = "
+                 + d2s(drop.getFitDistance(), significantDigits));
     }
 
     /** Find a drop shape that minimises the distance to the given
@@ -1326,6 +1331,33 @@ public class Goutte_pendante implements Command, Previewable {
 
     // -- private classes and helper methods --
 
+
+    /** Convert a double to a decimal String representation, rounding
+     * to significantDigits non-zero digits. */
+    public String d2s(double d, int significantDigits) {
+        java.math.BigDecimal bd = new java.math.BigDecimal(d);
+        final int p = bd.precision();
+        if (p <= significantDigits) return bd.toString();
+        final int s = bd.scale();
+            return bd.setScale(s + significantDigits - p,
+                               java.math.RoundingMode.HALF_EVEN).toString();
+    }
+
+    /** Convert a double to a decimal String representation, rounding
+     * to (minSignificantDigits-1) decimal places if possible, but
+     * making sure at least minSignificantDigits non-zero digits
+     * remain. */
+    public String d2sFrac(double d, int minSignificantDigits) {
+        java.math.BigDecimal bd = new java.math.BigDecimal(d);
+        final int s = bd.scale();
+        final int p = bd.precision();
+        if (s+1 > minSignificantDigits && p > minSignificantDigits) 
+            return bd.setScale(minSignificantDigits + Math.max(-1,s-p),
+                               java.math.RoundingMode.HALF_EVEN).toString();
+        else
+            return bd.toString();
+    }
+
     /** An object describing a real-valued polynome in one variable. */
     private class Polynome {
         double[] coeff;
@@ -1512,11 +1544,11 @@ public class Goutte_pendante implements Command, Previewable {
 
         @Override
         public String toString() {
-            return "Contour[tR=" + tip_radius +
-                ", cl=" + capillary_length +
-                ", tX=" + tip_x +
-                ", tY=" + tip_y +
-                ", ang=" + gravity_deg + "]";
+            return "Contour[tR=" + d2s(tip_radius, significantDigits) +
+                ", cl=" + d2s(capillary_length, significantDigits) +
+                ", tX=" + d2s(tip_x, significantDigits) +
+                ", tY=" + d2s(tip_y, significantDigits) +
+                ", ang=" + d2s(gravity_deg, significantDigits) + "]";
         }
     }
 
@@ -1592,11 +1624,11 @@ public class Goutte_pendante implements Command, Previewable {
 
         @Override
         public String toString() {
-            return "DContour[DtR=" + delta_tip_radius +
-                ", Dcl=" + delta_capillary_length +
-                ", DtX=" + delta_tip_x +
-                ", DtY=" + delta_tip_y +
-                ", Dang=" + delta_gravity_deg + "]";
+            return "DContour[DtR=" + d2s(delta_tip_radius, significantDigits) +
+                ", Dcl=" + d2s(delta_capillary_length, significantDigits) +
+                ", DtX=" + d2s(delta_tip_x, significantDigits) +
+                ", DtY=" + d2s(delta_tip_y, significantDigits) +
+                ", Dang=" + d2s(delta_gravity_deg, significantDigits) + "]";
         }
     }
 
