@@ -667,9 +667,17 @@ public class Goutte_pendante implements Command, Previewable {
             deriv(tmp,k3);
             for (int i=0; i<nVar; i++) tmp[i] = state[i] + ds*k3[i];
             deriv(tmp,k4);
+            final boolean thinning = 2*state[1] > Math.PI;
             for (int i=0; i<nVar; i++)
-                state[i] = state[i] + ds*(k1[i]+2*k2[i]+2*k3[i]+k4[i])/6;
-            if (k4[3] < 0) break; // abort if profile bends back downwards
+                state[i] += ds*(k1[i]+2*k2[i]+2*k3[i]+k4[i])/6;
+            final boolean hasNeck = thinning && (2*state[1] < Math.PI);
+            final double dz = ds*(k1[3]+2*k2[3]+2*k3[3]+k4[3])/6;
+            // abort if profile becomes non-physical:
+            if (dz < 0 || //  bends back downwards
+                state[0] <= 0 || // traverses axis 
+                hasNeck) {
+                break;
+            }
             profile.add(new Point2D.Double((double)state[0],(double)state[3]));
         }
 
@@ -763,29 +771,35 @@ public class Goutte_pendante implements Command, Previewable {
     }
 
     /** Calculate drop contour volume (non-dimensional). */
-    private double calcVolume(final ArrayList<Point2D.Double> profile) {
+    private double calcVolume(final ArrayList<Point2D.Double> profile,
+                              double yMax) {
         Point2D.Double p, q;
         double volume = 0;
         Iterator<Point2D.Double> iter = profile.iterator();
         p = iter.next();
         while (iter.hasNext()) {
             q = iter.next();
-            volume += (Math.PI/3) * (p.x*p.x + p.x*q.x + q.x*q.x);
+            if (q.y > yMax) {log.info("q.y=" +q.y+ ", yMax = " +yMax);break;}
+            volume += (Math.PI/3) * (p.x*p.x + p.x*q.x + q.x*q.x) * (q.y - p.y);
+            p = q;
         }
         return volume;
     }
 
     /** Calculate drop contour surface (non-dimensional). */
-    private double calcSurface(final ArrayList<Point2D.Double> profile) {
+    private double calcSurface(final ArrayList<Point2D.Double> profile,
+                               double yMax) {
         Point2D.Double p, q;
         double surface = 0;
         Iterator<Point2D.Double> iter = profile.iterator();
         p = iter.next();
         while (iter.hasNext()) {
             q = iter.next();
+            if (q.y > yMax) break;
             surface += Math.PI * (p.x + q.x) *
                 Math.sqrt((q.x - p.x) * (q.x - p.x) +
                           (q.y - p.y) * (q.y - p.y));
+            p = q;
         }
         return surface;
     }
@@ -1613,9 +1627,10 @@ public class Goutte_pendante implements Command, Previewable {
         ContourProperties(Contour c) {
             geometry = c;
             if (c.tip_radius > 0 && c.capillary_length > 0) {
-                halfAdimProfile = calculateProfile(c.tip_radius / c.capillary_length,
-                                                   bounds.height * pixel_size /
-                                                   c.capillary_length);
+                halfAdimProfile =
+                    calculateProfile(c.tip_radius / c.capillary_length,
+                                     1.5 * bounds.height * pixel_size /
+                                     c.capillary_length);
                 closedAdimProfile = makeClosedPath(halfAdimProfile);
                 dimShape = contourToScreen(closedAdimProfile,
                                            c.capillary_length / pixel_size,
@@ -1658,16 +1673,20 @@ public class Goutte_pendante implements Command, Previewable {
 
         public double getVolume() {
             if (volume < 0) {
-                volume = pixel_size * pixel_size * pixel_size *
-                    calcVolume(halfAdimProfile);
+                final double scale = geometry.capillary_length;
+                final double yMax = (geometry.tip_y - bounds.y * pixel_size)
+                    / scale;
+                volume = scale*scale*scale * calcVolume(halfAdimProfile, yMax);
             }
             return volume;
         }
 
         public double getSurface() {
             if (surface < 0) {
-                surface = pixel_size * pixel_size *
-                    calcSurface(halfAdimProfile);
+                final double scale = geometry.capillary_length;
+                final double yMax = (geometry.tip_y - bounds.y * pixel_size)
+                    / scale;
+                surface = scale*scale * calcSurface(halfAdimProfile, yMax);
             }
             return surface;
         }
