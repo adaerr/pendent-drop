@@ -280,7 +280,7 @@ public class Goutte_pendante implements Command, Previewable {
     public void preview() {
         Contour c = new Contour(tip_radius, capillary_length, tip_x,
                                 tip_y, gravity_deg);
-        log.info("previewing contour "+c);
+        log.info(c);
         ContourProperties cp = new ContourProperties(c);
         updateOverlay(cp.getDimShape());
         showProperties(cp);
@@ -611,10 +611,19 @@ public class Goutte_pendante implements Command, Previewable {
      * Expects tip radius and maximum z value to be given normalised
      * by capillary length. */
     ArrayList<Point2D.Double> calculateProfile(double tipRadius, double zMax) {
-        //System.err.println("tipRadius = "+tipRadius+", zMax = "+zMax);
+        // desired number of points on profile
+        final int nPoints = 2*(bounds.height - bounds.y);
+        final ArrayList<Point2D.Double> profile
+            = new ArrayList<Point2D.Double>(nPoints);
 
-        final double ds = 0.001;// integration step
-        final ArrayList<Point2D.Double> profile = new ArrayList<Point2D.Double>((int)(zMax/ds));
+        // roughly estimate an upper bound for z (quite arbitrary
+        // expressions, validity checked by sampling the tipRadius
+        // parameter space)
+        final double zMaxExpected =
+            Math.min(1.1 * zMax, tipRadius < 0.5 ?
+                     2 * tipRadius * (1 + 1.55*tipRadius) :
+                     Math.min(3.5, 3 / tipRadius)) ;
+        final double ds = zMaxExpected / nPoints;// integration step
 
         // Near the drop tip the integral equations become singular,
         // but the solution is simply a nearly perfectly spherical
@@ -625,7 +634,7 @@ public class Goutte_pendante implements Command, Previewable {
         // The following constant defines the fraction of capillary
         // length or tip radius (whichever is smaller) up to which we
         // use the approximate solution
-        final double approxLimit = 1;//0.01;
+        final double approxLimit = 0.2;
 
         double s;
         double sLimit;// curvilinear coordinate where we switch from
@@ -639,7 +648,7 @@ public class Goutte_pendante implements Command, Previewable {
             double r, z;
             r = tipRadius*Math.sin(s/tipRadius) +
                 Math.pow(s,5)/(40*tipRadius*tipRadius);
-            z = 0.5f*s*s*(1-s*s*(0.75f+1/(tipRadius*tipRadius))/12)/tipRadius;
+            z = 0.5*s*s*(1-s*s*(0.75+1/(tipRadius*tipRadius))/12)/tipRadius;
             profile.add(new Point2D.Double((double)r,(double)z));
         }
 
@@ -673,11 +682,8 @@ public class Goutte_pendante implements Command, Previewable {
             final boolean hasNeck = thinning && (2*state[1] < Math.PI);
             final double dz = ds*(k1[3]+2*k2[3]+2*k3[3]+k4[3])/6;
             // abort if profile becomes non-physical:
-            if (dz < 0 || //  bends back downwards
-                state[0] <= 0 || // traverses axis 
-                hasNeck) {
-                break;
-            }
+            // bends back downwards, traverses r=0 axis or has neck
+            if (dz < 0 || state[0] <= 0 || hasNeck) break;
             profile.add(new Point2D.Double((double)state[0],(double)state[3]));
         }
 
@@ -779,7 +785,7 @@ public class Goutte_pendante implements Command, Previewable {
         p = iter.next();
         while (iter.hasNext()) {
             q = iter.next();
-            if (q.y > yMax) {log.info("q.y=" +q.y+ ", yMax = " +yMax);break;}
+            if (q.y > yMax) break;
             volume += (Math.PI/3) * (p.x*p.x + p.x*q.x + q.x*q.x) * (q.y - p.y);
             p = q;
         }
@@ -933,9 +939,9 @@ public class Goutte_pendante implements Command, Previewable {
         final double capillary_length = drop.getContour().getCapillaryLength();
         final double surface_tension = capillary_length*capillary_length* rho_g;
         log.info("surface tension = " + surface_tension +
-                 "\ndrop volume = " + drop.getVolume() +
-                 "\ndrop surface = " + drop.getSurface() +
-                 "\nfitDistance = " + drop.getFitDistance());
+                 "\n       drop volume = " + drop.getVolume() +
+                 "\n       drop surface = " + drop.getSurface() +
+                 "\n       fitDistance = " + drop.getFitDistance());
     }
 
     /** Find a drop shape that minimises the distance to the given
