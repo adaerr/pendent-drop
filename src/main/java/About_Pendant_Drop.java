@@ -374,7 +374,7 @@ public class About_Pendant_Drop implements Command, ActionListener {
         doc.put("Author homepage URL",
                 "http://www.msc.univ-paris-diderot.fr/~daerr/");
         doc.put("Detailed documentation PDF file",
-                "article/Goutte_pendante.pdf");
+                "Goutte_pendante.pdf");
         doc.put("Example image: water drop, TIFF image",
                 "water_dsc1884.tif");
         return doc;
