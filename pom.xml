@@ -14,7 +14,7 @@
 
 	<groupId>name.adriandaerr.imagejplugins.pendentdrop</groupId>
 	<artifactId>pendent_drop</artifactId>
-	<version>2.0.1</version>
+	<version>2.1.0-SNAPSHOT</version>
 
 	<name>Pendent Drop ImageJ Plugin</name>
 	<description>Surface tension measurement through the pendent
