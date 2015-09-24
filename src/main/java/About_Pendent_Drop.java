@@ -1,5 +1,5 @@
 /*
- * Present help information about the Pendant Drop plugin
+ * Present help information about the Pendent Drop plugin
  */
 
 import net.imagej.Dataset;
@@ -40,12 +40,12 @@ import javax.swing.BoxLayout;
 import javax.swing.BorderFactory;
 
 /**
- * Show documentation and links about the Pendant Drop plugin.
+ * Show documentation and links about the Pendent Drop plugin.
  */
 @Plugin(type = Command.class,
         headless = false,
-        menuPath = "Plugins>Drop Analysis>About Pendant Drop")
-public class About_Pendant_Drop implements Command, ActionListener {
+        menuPath = "Plugins>Drop Analysis>About Pendent Drop")
+public class About_Pendent_Drop implements Command, ActionListener {
 
     // needed to open images
     @Parameter
@@ -57,7 +57,7 @@ public class About_Pendant_Drop implements Command, ActionListener {
     @Parameter
     private LogService log;
 
-    private final static String pluginMenuName = "Pendant drop";
+    private final static String pluginMenuName = "Pendent drop";
 
     private final java.util.Map<JButton,URI> uris =
         new java.util.LinkedHashMap<JButton,URI>();
@@ -358,11 +358,11 @@ public class About_Pendant_Drop implements Command, ActionListener {
                 "for liquid surface tension measurement.\n" +
                 "This plug-in allows for interactive or automated adjustment\n" +
                 "of a theoretical profile to an image of an axisymmetric\n" +
-                "pendant drop.\n" +
+                "pendent drop.\n" +
                 "Drop properties such as surface tension, volume, interface\n" +
                 "area are then calculated from the profile.");
         doc.put("Usage",
-                "Draw a rectangular ROI around the free pendant part of the\n" +
+                "Draw a rectangular ROI around the free pendent part of the\n" +
                 "drop before calling the Plugin; then adjust parameters\n" +
                 "interactively and/or fit selected parameters automatically.\n" +
                 "[For more details see PDF documentation below]");
@@ -404,7 +404,7 @@ public class About_Pendant_Drop implements Command, ActionListener {
         final ImageJ ij = net.imagej.Main.launch(args);
 
         // Launch our command right away.
-        ij.command().run(About_Pendant_Drop.class, true);
+        ij.command().run(About_Pendent_Drop.class, true);
     }
 
 }

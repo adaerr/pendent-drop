@@ -12,12 +12,12 @@
 		<relativePath />
 	</parent>
 
-	<groupId>name.adriandaerr.imagejplugins.pendantdrop</groupId>
-	<artifactId>pendant_drop</artifactId>
-	<version>2.0.0</version>
+	<groupId>name.adriandaerr.imagejplugins.pendentdrop</groupId>
+	<artifactId>pendent_drop</artifactId>
+	<version>2.0.1</version>
 
-	<name>Pendant Drop ImageJ Plugin</name>
-	<description>Surface tension measurement through the pendant
+	<name>Pendent Drop ImageJ Plugin</name>
+	<description>Surface tension measurement through the pendent
 	drop method.</description>
 
 	<properties>

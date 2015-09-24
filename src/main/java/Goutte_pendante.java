@@ -1,11 +1,11 @@
 /*
- * Pendant drop profile integration and fitting
+ * Pendent drop profile integration and fitting
  *
  * This plug-in allows for interactive or automated adjustment of a
- * profile to an image of a pendant drop. The surface tension, volume
+ * profile to an image of a pendent drop. The surface tension, volume
  * and surface associated with this profile can then be obtained.
  *
- * Context: The pendant drop method is commonly used to measure
+ * Context: The pendent drop method is commonly used to measure
  * surface tensions of liquids. It consists in analysing the shape of
  * a drop hanging typically from a capillary tube and about to detach
  * (sometimes the inverse situation of a bubble forming at the bottom
@@ -19,7 +19,7 @@
  * difference is given.
  *
  * For more information see the included PDF documentation
- * (Plugins -> Drop Analysis -> About Pendant Drop)
+ * (Plugins -> Drop Analysis -> About Pendent Drop)
  */
 
 import java.awt.Color;
@@ -66,10 +66,10 @@ import org.scijava.util.Colors;
 import org.scijava.util.RealRect;
 import org.scijava.widget.Button;
 
-/** An ImageJ2 plugin analyzing the shape of a pendant drop.
+/** An ImageJ2 plugin analyzing the shape of a pendent drop.
  */
 @Plugin(type = Command.class,
-        menuPath = "Plugins>Drop Analysis>Pendant Drop",
+        menuPath = "Plugins>Drop Analysis>Pendent Drop",
         initializer = "paramInitializer")
 public class Goutte_pendante implements Command, Previewable {
 
@@ -240,7 +240,7 @@ public class Goutte_pendante implements Command, Previewable {
 
         // iterate over slices of the stack
         for (int n=0; n<stack.getSize(); n++) {
-            statusService.showStatus("Pendant drop processing image " + (n+1));
+            statusService.showStatus("Pendent drop processing image " + (n+1));
 
             if (! findDropBorders(stack.getProcessor(n+1))) {
                 log.error("Could not detect drop on image " + (n+1) + ", skipping.");
@@ -272,7 +272,7 @@ public class Goutte_pendante implements Command, Previewable {
             imp.updateAndDraw();
         }
 
-        statusService.showStatus("Pendant drop done");
+        statusService.showStatus("Pendent drop done");
     }
 
     // -- Previewable methods --
@@ -1351,7 +1351,7 @@ public class Goutte_pendante implements Command, Previewable {
         java.math.BigDecimal bd = new java.math.BigDecimal(d);
         final int s = bd.scale();
         final int p = bd.precision();
-        if (s+1 > minSignificantDigits && p > minSignificantDigits) 
+        if (s+1 > minSignificantDigits && p > minSignificantDigits)
             return bd.setScale(minSignificantDigits + Math.max(-1,s-p),
                                java.math.RoundingMode.HALF_EVEN).toString();
         else

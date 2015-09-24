@@ -1,15 +1,15 @@
-Pendant Drop ImageJ plugin
+Pendent Drop ImageJ plugin
 ==========================
 
-# Pendant drop profile integration and fitting
+# Pendent drop profile integration and fitting
 
 This plug-in allows for interactive or automated adjustment of a
-profile to an image of a pendant drop. The surface tension, volume
+profile to an image of a pendent drop. The surface tension, volume
 and surface associated with this profile can then be obtained.
 
 ## Context
 
-The pendant drop method is commonly used to measure surface tensions
+The pendent drop method is commonly used to measure surface tensions
 of liquids. It consists in analysing the shape of a drop hanging
 typically from a capillary tube and about to detach (sometimes the
 inverse situation of a bubble forming at the bottom of a liquid is
@@ -22,7 +22,7 @@ of symetry axis and capillary length. The surface tension is
 calculated from the latter if the density difference is given.
 
 For more information see the included PDF documentation
-(Plugins -> Drop Analysis -> About Pendant Drop)
+(Plugins -> Drop Analysis -> About Pendent Drop)
 
 # Installation
 

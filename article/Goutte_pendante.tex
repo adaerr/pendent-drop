@@ -13,10 +13,10 @@
 \usetikzlibrary{decorations}
 \usepgflibrary{decorations.pathmorphing}
 
-\usepackage[pdftitle={Pendant drop measurement with ImageJ},
+\usepackage[pdftitle={Pendent drop measurement with ImageJ},
     pdfauthor={Adrian Daerr and Adrien Mogne},
-    pdfsubject={Pendant drop Plugin for ImageJ, Université Paris Diderot},
-    pdfkeywords={pendant drop, surface tension, ImageJ},
+    pdfsubject={Pendent drop Plugin for ImageJ, Université Paris Diderot},
+    pdfkeywords={pendent drop, surface tension, ImageJ},
     linkcolor=blue,pdfborder={0 0 0},citecolor=black,
     filecolor=blue,urlcolor=blue]{hyperref}
 
@@ -41,7 +41,7 @@
 
 \setcapindent{1em}
 
-\newcommand{\gouttependante}{\texttt{Pendant\_Drop}\xspace}
+\newcommand{\gouttependante}{\texttt{Pendent\_Drop}\xspace}
 \newcommand{\ud}{\mathrm{d}}% d droit
 \newcommand{\grid}[2]{%
   \draw[step=0.1cm,gray,ultra thin] (-#1,-#2) grid (#1,#2);%
@@ -56,7 +56,7 @@
 \subject{\gouttependante}
 
 \title{Measuring liquid surface tension through the
-       pendant drop method: description of a measurement bench and an
+       pendent drop method: description of a measurement bench and an
        ImageJ Plugin}
 
 \author{Adrian Daerr%
@@ -69,12 +69,12 @@
 \maketitle
 
 \begin{abstract}
-  The pendant drop method for surface tension measurement consists in
+  The pendent drop method for surface tension measurement consists in
   analysing the shape of an axisymmetric drop hanging from a capillary
-  tube (Fig.~\ref{fig:pendantdropphoto}). This article describes the
+  tube (Fig.~\ref{fig:pendentdropphoto}). This article describes the
   principle and some practical considerations in implementing this
   method, both experimentally and numerically. Our numerical tool to
-  match a theoretical profile to the contour of a pendant drop, either
+  match a theoretical profile to the contour of a pendent drop, either
   interactively or automatically, is available as an open-source
   \gouttependante Plugin for
   \href{http://imagej.nih.gov/ij/}{ImageJ}~\cite{ImageJ}. This Plugin
@@ -108,25 +108,25 @@
     \node[label] (e) at (siliconoiloptim.south west) {\subfig{e}} ;
   \end{tikzpicture}
 
-  \caption{(\subfig{a}) Experimental set-up for pendant drop surface
+  \caption{(\subfig{a}) Experimental set-up for pendent drop surface
     tension measurement: a drop is hanging from a capillary tube
     (diameter here: $1.68\,$mm). A light source far behind the drop
     provides a bright background against which the drop is
     photographed. (\subfig{b,c}) Drops of water and perfluorated oil
     close to the maximum volume before drop detachment. It is easy to
     see that the difference in surface tension has a tremendous effect
-    on the drop shape. The pendant drop method consists in exploiting
+    on the drop shape. The pendent drop method consists in exploiting
     this strong dependency in order to determine an unknown surface
     tension. (\subfig{d,e}) After improving experimental conditions to
     get rid of spurious reflections and to enhance contrast.}
-  \label{fig:pendantdropphoto}
+  \label{fig:pendentdropphoto}
 \end{figure}
 
 
 \section{Introduction}
 \label{sec:introduction}
 
-The pendant drop method is commonly used to measure surface tensions
+The pendent drop method is commonly used to measure surface tensions
 of liquids. It consists in analysing the shape of a drop hanging
 typically from a capillary tube and about to detach. The method can
 also be applied to drops resting on a flat surface. For transparent
@@ -158,7 +158,7 @@ relative error on the surface tension:
 \frac{\Delta\gamma}{\gamma} = 2 \frac{\Delta\ell}{\ell}
 \]
 
-The pendant drop technique is well established and there are numerous
+The pendent drop technique is well established and there are numerous
 high quality commercial devices to measure not only static, but also
 dynamic properties of interfaces. These are however often available
 only in laboratories specialised in interface physics and chemistry.
@@ -249,7 +249,7 @@ hand or by a syringe pump.
     % legendes
     \node[align=right] at (-0.5,-0.9) {Light\\Source};
     \node[align=center] at (0.2,-2.5) {Diffusor \&\\Diaphragm};
-    \node at (2.8,-2.5) {Condenser} ; \node at (7,-2.5) {Pendant
+    \node at (2.8,-2.5) {Condenser} ; \node at (7,-2.5) {Pendent
       Drop}; \draw[ultra thin] (11.4,-2.0) -- ++(0,-0.2) --
     ++(3.5,0) -- ++(0,0.2) ; \node at (13,-2.5) {Camera};
   \end{tikzpicture}
@@ -499,11 +499,11 @@ excusively due to adsorption of new surfactant molecules, a feedback
 loop is needed that maintains a constant drop surface.
 
 
-\section{Physics of the pendant drop}
+\section{Physics of the pendent drop}
 \label{sec:theory}
 
 Cohesive forces between the molecules of the liquid prevent the
-pendant drop from detaching under its weight, up to a critical size.
+pendent drop from detaching under its weight, up to a critical size.
 The effect of these cohesive forces is thermodynamically described by
 a contribution $\gamma\, \ud S$ to the free energy that is
 proportional to the surface variation $\ud S$, where $\gamma$ is the
@@ -513,14 +513,14 @@ under tension, and the equilibrium shape is one minimising this
 surface together with the potential energy.
 
 To establish an equation describing the shape of an axisymmetric
-pendant drop (fig.~\ref{fig:notations}), it is easier to consider the
+pendent drop (fig.~\ref{fig:notations}), it is easier to consider the
 local pressure balance. Just like the pressure inside of a rubber
 balloon is higher than outside, surface tension is responsible for a
 pressure jump across a curved interface, that is related to its mean
 curvature $\bar\kappa$ by Young-Laplace's formula $\Delta\! p(z) =
 \gamma \bar\kappa(z)$.
 
-Now in a pendant drop the pressure jump across the interface varies
+Now in a pendent drop the pressure jump across the interface varies
 with height, because of the density difference between the inner
 liquid and outer gas phase, implying that the surface curvature must
 vary as well. Indeed, the drop has an equilibrium shape if and only if
@@ -662,12 +662,12 @@ after a full round becomes too small.
 \section{Prerequisites}
 \label{sec:prerequisites}
 
-The Plugin is run on a high contrast image of a pendant drop
+The Plugin is run on a high contrast image of a pendent drop
 (Fig.~\ref{fig:usage}-left). Pixel values are expected to be close to
 zero within the drop, and close to saturation (i.e. 255 for 8-bit
 images) outside. This is typically obtained by taking the picture of
 the drop in front of a light background far away from the drop
-(Fig.~\ref{fig:pendantdropphoto}). Bright spots well within the drop
+(Fig.~\ref{fig:pendentdropphoto}). Bright spots well within the drop
 are not a problem, but contrast should be good in the vicinity of the
 contour. Note however that saturation should be avoided at all cost,
 both because of blooming effects in the light sensitive image
@@ -675,14 +675,14 @@ recording device and because it tends to bias the interface detection
 towards the inside of the drop. See also section~\ref{sec:bench}.
 
 
-\section{Pendant\_Drop ImageJ Plugin Usage}
+\section{Pendent\_Drop ImageJ Plugin Usage}
 \label{sec:usage}
 
 By default, the \gouttependante Plugin appears in the Plugins menu of
 ImageJ, in a folder termed \texttt{Drop Analysis}. The menu item
-\texttt{About Pendant Drop} will show a bit of information on the
+\texttt{About Pendent Drop} will show a bit of information on the
 Plugin, including usage, the update site and an example image on which
-you can test the Plugin. The menu item \texttt{Pendant Drop} launches
+you can test the Plugin. The menu item \texttt{Pendent Drop} launches
 the Plugin itself.
 
 \begin{figure}
@@ -698,7 +698,7 @@ the Plugin itself.
   \label{fig:usage}
 \end{figure}
 
-Draw a rectangular Region Of Interest (ROI) around the pendant drop
+Draw a rectangular Region Of Interest (ROI) around the pendent drop
 before calling the Plugin (Fig.~\ref{fig:usage}-middle). The ROI
 should not include the inlet tube, but only the free surface of the
 drop. A few ten or so pixels margin around the drop is sufficient for
@@ -754,16 +754,16 @@ tension $\gamma$ is calculated from the capillary length using the
 formula $\gamma = \Delta\!\rho g \ell_c^2$.
 
 
-\section{Installing the Pendant\_Drop Plugin for ImageJ}
+\section{Installing the Pendent\_Drop Plugin for ImageJ}
 \label{sec:installation}
 
 \begin{description}
 \item[via the update site] The preferred method is to use
-  \href{http://fiji.sc/}{Fiji}'s \cite{FijiSite,Schindelin2012}
-  update mechanism. Detailed step-by-step instructions with
-  illustrations can be found at
-  \url{http://fiji.sc/How_to_follow_a_3rd_party_update_site}, in case
-  the following is too confusing or outdated.
+  \href{http://fiji.sc/}{Fiji}'s \cite{FijiSite,Schindelin2012} update
+  mechanism. Detailed step-by-step instructions with illustrations can
+  be found at
+  \url{http://fiji.sc/How_to_follow_a_3rd_party_update_site}. This
+  software is hosted at \url{http://fiji.sc/List_of_update_sites}.
 
   In the \texttt{Help} menu, select \texttt{Update Fiji} to start the
   updater. Choose the \texttt{Advanced mode}, click on \texttt{Manage
@@ -776,11 +776,11 @@ formula $\gamma = \Delta\!\rho g \ell_c^2$.
 
   Enable this site (check the box next to it) and close the window to
   get back to the main updater window. In the list of Plugins, locate
-  \texttt{plugins:pendant\_dropX.jar} (to find it more easily you can
-  restrict the list to items from the new site using the menu above
-  the list), select it and mark it for installation. Apply changes,
-  restart Fiji: a new folder \texttt{Drop Analysis} should appear
-  in the Plugins menu.
+  \texttt{plugins:pendent\_drop-2.0.0.jar} (to find it more easily you
+  can restrict the list to items from the new site using the menu
+  above the list), select it and mark it for installation. Apply
+  changes, restart Fiji: a new folder \texttt{Drop Analysis} should
+  appear in the Plugins menu.
 
 \item[by downloading the jar file] For a manual installation, and as
   usual with ImageJ Plugins, just put the jar into ImageJ's
@@ -789,7 +789,7 @@ formula $\gamma = \Delta\!\rho g \ell_c^2$.
 
 \item[by building from the source] The source code of the
   \gouttependante Plugin is hosted on gitlab at
-  \url{https://gitlab.com/pendant-drop/pendant-drop}. You will need
+  \url{https://github.com/adaerr/pendent-drop}. You will need
   tools such as \texttt{git} and a java compiler and be familiar with
   their usage. If you are using \texttt{maven}, then the command
   \texttt{mvn package} should produce a jar file for you in the
