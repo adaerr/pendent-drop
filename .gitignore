@@ -1,4 +1,5 @@
-article/Goutte_pendante.aux
-article/Goutte_pendante.log
-article/Goutte_pendante.out
+article/*.aux
+article/*.log
+article/*.out
+Goutte_pendante_bibupdate.tex
 target

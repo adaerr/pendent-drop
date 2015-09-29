@@ -5,13 +5,14 @@
 \usepackage{lmodern}
 \usepackage{xspace}
 \usepackage{tikz}
+\usetikzlibrary{datavisualization}
+%\usetikzlibrary{calc}
+%\usetikzlibrary{decorations}
+%\usepgflibrary{decorations.pathmorphing}
+\usepackage{standalone}% some tikz pictures reside in external files
 \usepackage[range-phrase = --,retain-unity-mantissa = false,exponent-product = \cdot]{siunitx}
 \usepackage{url}
 \newcommand{\email}[1]{\url{#1}}
-\usetikzlibrary{calc}
-\usetikzlibrary{datavisualization}
-\usetikzlibrary{decorations}
-\usepgflibrary{decorations.pathmorphing}
 
 \usepackage[pdftitle={Pendent drop measurement with ImageJ},
     pdfauthor={Adrian Daerr and Adrien Mogne},
@@ -211,48 +212,7 @@ hand or by a syringe pump.
 
 \begin{figure}
   \centering
-  \begin{tikzpicture}[scale=0.5]
-    \scriptsize % affects text nodes in this picture
-    \draw (0,0) circle (5pt); % source de lumière
-    \foreach \phi in { 22.5, 67.5, 112.5, 157.5 } { \draw (\phi:7pt)
-      -- (\phi:10pt) ; \draw (-\phi:7pt) -- (-\phi:10pt) ; }
-    \fill[gray!50] (0.4,-2) rectangle (0.5,2) ; % diffuseur
-    % diaphragme source
-    \fill (0.5,-2) -- ++(0.1,0) -- ++(0,1.8) -- +(-0.1,0.1) --
-    cycle; \fill (0.5,2) -- ++(0.1,0) -- ++(0,-1.8) -- +(-0.1,-0.1)
-    -- cycle; \fill[gray!50] (2.5,1.3) to [bend left] (2.5,-1.3) to
-    [bend left] cycle; % lentille condenseur
-    \draw (6.9,2.5)--(6.9,0.7)--(7.1,0.7)--(7.1,2.5); % tube
-    \draw (6.9,0.7) .. controls (6,-1) and (8,-1) ..
-    (7.1,0.7); % goutte
-    \begin{scope}[yscale=-0.944/1.3] % tube et goutte image
-      \draw (14.7,2.5)--(14.7,0.7)--(14.845,0.7)--(14.845,2.5);
-      \draw (14.7,0.7) .. controls (14.04,-1) and (15.5,-1) ..
-      (14.845,0.7);
-    \end{scope}
-    \draw[dotted] (14.77,2.0) -- +(0,-4.0); % capteur cmos
-    % diaphragme camera
-    \fill (13.455,2.0) -- ++(-0.1,0) -- ++(0,-1.5) -- ++(0.1,0.1) --
-    cycle; \fill (13.455,-2.0) -- ++(-0.1,0) -- ++(0,1.5) --
-    ++(0.1,-0.1) -- cycle;
-    % lentille camera
-    \fill[gray!50] (11.5,2.0) to [bend left=20] ++(0,-4) to [bend
-    left=20] cycle;
-
-    \draw[ultra thin] (-0.5,0)--(15.2,0); % axe optique
-    % rayons
-    \draw[dashed] (0.5,0)--(2.5,1.3)--(11.5,1.3)--(14.7,-0.944);
-    \draw[dashed] (0.5,0)--(2.5,-1.3)--(11.5,-1.3)--(14.7,0.944);
-    \draw[thick] (7.1,0.65)--(14.7,-0.472); % rayon objet
-    \draw[thick] (7.1,0.65)--(11.5,0.65)--(14.7,-0.472);
-
-    % legendes
-    \node[align=right] at (-0.5,-0.9) {Light\\Source};
-    \node[align=center] at (0.2,-2.5) {Diffusor \&\\Diaphragm};
-    \node at (2.8,-2.5) {Condenser} ; \node at (7,-2.5) {Pendent
-      Drop}; \draw[ultra thin] (11.4,-2.0) -- ++(0,-0.2) --
-    ++(3.5,0) -- ++(0,0.2) ; \node at (13,-2.5) {Camera};
-  \end{tikzpicture}
+  \input{measurement_setup.tex}
   
   \caption{Schematics of a simple surface tension measurement set-up.
     The horizontal distances are much larger than depicted, both the
@@ -275,23 +235,7 @@ seen because the interfaces are perpendicular to the optical axis).
 
 \begin{figure}
   \centering
-  \begin{tikzpicture}
-    \scriptsize % affects text nodes in this picture
-    \newcommand{\dphi}{15}
-    \newcommand{\rad}{10}
-    \coordinate (dropcenter) at (-90-\dphi:\rad) ;
-    % light rays
-    \draw[->,>=stealth] (180-2*\dphi:3.2) node[left] {A} -- (0,0) -- (3,0) node[right] {camera} ;
-    \draw[->,>=stealth] (-2.9,1.1) node[left] {B} -- (3,1.1) ;
-    % drop
-    \clip (-3.3,1) rectangle (2,-1) ;
-    \fill[gray!50,draw=black,very thick] (dropcenter) circle [radius=\rad] ;
-    \node[above right] at (-2,-1) {drop} ;
-    % virtual light ray
-    \draw[dashed] (0,0) -- (0,0 -| dropcenter) node[left] {A'} ;
-    % focal plane
-    \draw[very thin] (dropcenter |- 0,-1) -- +(0,1.7) node[right] {F} ;
-  \end{tikzpicture}
+  \input{grazing_reflections.tex}
   \caption{Light reaching the drop from direction A will be partially
     reflected towards the camera, whose focal plane cuts through the
     drop at $F$. The light will appear as coming from point $A'$, and
@@ -424,57 +368,9 @@ reach an equilibrium.
 
 \begin{figure}
   \centering
-\begin{tikzpicture}
-  \datavisualization [ scientific axes=clean ,
-x axis={attribute=time, grid, ticks={step=60}, label={time / \si{\second}}},
-y axis={attribute=surface tension, include value=0, grid,
-  label={surface tension / \si{\milli\newton\per\metre}}},
-style sheet=strong colors,
-visualize as scatter ]
-%data [read from file=Surfactine_954_2015-07-13-3.csv] ;
-data {
-time, capillary length, surface tension
-0, 2.71, 71.87
-10, 2.68, 70.41
-20, 2.62, 67.3
-30, 2.58, 65.5
-40, 2.55, 64.04
-50, 2.52, 62.13
-60, 2.48, 60.13
-70, 2.36, 54.44
-80, 2.26, 49.97
-90, 2.22, 48.48
-100, 2.24, 49.31
-110, 2.22, 48.41
-120, 2.21, 48.11
-130, 2.14, 45.01
-140, 1.98, 38.27
-150, 1.97, 38.11
-160, 1.95, 37.47
-170, 1.99, 38.7
-180, 2.02, 39.86
-190, 2.04, 41.02
-200, 1.96, 36.92
-210, 1.91, 35.67
-220, 1.93, 36.36
-230, 1.89, 34.92
-240, 1.85, 33.56
-250, 1.88, 34.81
-260, 1.83, 32.86
-270, 1.76, 30.36
-280, 1.78, 30.94
-290, 1.81, 32.0
-300, 1.86, 33.93
-310, 1.82, 32.52
-320, 1.74, 29.82
-330, 1.76, 30.48
-340, 1.81, 32.16
-350, 1.84, 33.08
-};
-\end{tikzpicture}
-
-\caption{Surface tension of a drop of surfactine solution over time.}
-\label{fig:surfactine}
+  \input{surfactine_adsorption.tex}
+  \caption{Surface tension of a drop of surfactine solution over time.}
+  \label{fig:surfactine}
 \end{figure}
 
 The irregular decrease of the surface tension, especially the sudden
@@ -549,18 +445,9 @@ set-up and the drop volume, and constitutes an integration constant.
       enters the expression for the interface curvature, and is
       related to $R$ through $R' = \cos\psi$. We have spherical
       symmetry at the very tip, with radius $r_0$.}
-\begin{tikzpicture}
-  %\grid{3cm}{3cm}
-  \pgftext{\pgfimage[height=15em]{dropsketch}}
-  \pgftext[bottom,right,x=-10mm,y=-6mm] {$r_0$}
-  \pgftext[right,x=-5mm,y=-13mm] {$Z$}
-  \pgftext[bottom,x=3mm,y=-9mm] {$R$}
-  \pgftext[bottom,left,x=18mm,y=-7mm] {$\psi$}
-  \pgftext[x=-9mm,y=11mm] {$\rho_{\mathrm{in}}$}
-  \pgftext[x=-20mm,y=11mm] {$\rho_{\mathrm{out}}$}
-\end{tikzpicture}
-\end{captionbeside}
-\label{fig:notations}
+    \input{dropsketch_annotated.tex}
+  \end{captionbeside}
+  \label{fig:notations}
 \end{figure}
 
 At equilibrium, this hydrostatic pressure jump is equal to the Laplace
