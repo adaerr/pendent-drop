@@ -21,8 +21,13 @@ can be adjusted within this plug-in: tip position and curvature, tilt
 of symetry axis and capillary length. The surface tension is
 calculated from the latter if the density difference is given.
 
-For more information see the included PDF documentation
-(Plugins -> Drop Analysis -> About Pendent Drop)
+For more information see the included PDF documentation (Plugins ->
+Drop Analysis -> About Pendent Drop, or in the *article* directory of
+the source code) or the open access publication
+
+Daerr, A and Mogne, A 2016 *Pendent_Drop: An ImageJ Plugin to Measure
+the Surface Tension from an Image of a Pendent Drop*. Journal of Open
+Research Software, **4**: e3, DOI: http://dx.doi.org/10.5334/jors.97
 
 # Installation
 
@@ -59,3 +64,9 @@ THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR
 PURPOSE. THE ENTIRE RISK AS TO THE QUALITY AND PERFORMANCE OF THE
 PROGRAM IS WITH YOU. SHOULD THE PROGRAM PROVE DEFECTIVE, YOU ASSUME
 THE COST OF ALL NECESSARY SERVICING, REPAIR OR CORRECTION.
+
+# Archive
+
+This software is archived by Zenodo:
+
+[![DOI](https://zenodo.org/badge/18554/adaerr/pendent-drop.svg)](https://zenodo.org/badge/latestdoi/18554/adaerr/pendent-drop)

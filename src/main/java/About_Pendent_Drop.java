@@ -18,6 +18,7 @@ import java.awt.BorderLayout;
 import java.awt.Component;
 import java.awt.Dimension;
 import java.awt.Font;
+import java.awt.Toolkit;
 
 import java.net.URI;
 import java.net.URL;
@@ -75,26 +76,16 @@ public class About_Pendent_Drop implements Command, ActionListener {
         JFrame aboutWin = new JFrame("PlugIn Doc Browser");
         aboutWin.setDefaultCloseOperation(JFrame.DISPOSE_ON_CLOSE);
 
-        //Add scroll-pane
-        JPanel p = new JPanel();
-        p.setLayout(new BoxLayout(p, BoxLayout.PAGE_AXIS));
-        p.setBorder(BorderFactory.createLoweredBevelBorder());
-        p.setPreferredSize(new Dimension(800, 700));
-
-        //Add small vertical space
-        //p.add(Box.createRigidArea(new Dimension(0,5)));
-        JScrollPane scrollPane = new JScrollPane();
-        scrollPane.setAlignmentX(Component.LEFT_ALIGNMENT);
-        p.add(scrollPane);
-
-        aboutWin.add(p, BorderLayout.PAGE_START);
-
-        // and add rest into the scrollpane
-
+        //Documentation items will go in here, one above the other
         JPanel rootpane = new JPanel();
         rootpane.setLayout(new BoxLayout(rootpane, BoxLayout.PAGE_AXIS));
         rootpane.setBorder(BorderFactory.createEmptyBorder(5, 5, 0, 5));
 
+        JScrollPane scrollPane = new JScrollPane(rootpane);
+
+        aboutWin.add(scrollPane, BorderLayout.CENTER);
+
+        // Create title label using plugin name
         JLabel l = new JLabel(pluginMenuName);
         Font normalFont = l.getFont();
         l.setFont(new Font(Font.SANS_SERIF, Font.BOLD,
@@ -102,19 +93,18 @@ public class About_Pendent_Drop implements Command, ActionListener {
         l.setBorder(BorderFactory.createEmptyBorder(10, 20, 10, 20));
         rootpane.add(l);
 
+        rootpane.add(new JSeparator(SwingConstants.HORIZONTAL));
+
         Font labelFont = normalFont.deriveFont(Font.ITALIC,
                                                normalFont.getSize());
         Font urlFont = new Font(Font.MONOSPACED, Font.PLAIN,
                                 normalFont.getSize());
 
-
-        rootpane.add(new JSeparator(SwingConstants.HORIZONTAL));
-
         java.util.Map<String,String> doc = getDocumentation();
 
-        // extract all dictionary entries to one single page
+        // extract all dictionary entries to one single page (rootpane)
         for (String key: doc.keySet()) {
-            p = new JPanel();
+            JPanel p = new JPanel();
             p.setLayout(new BoxLayout(p, BoxLayout.PAGE_AXIS));
             p.setBorder(BorderFactory.createEmptyBorder(5, 5, 0, 5));
             //p.setAlignmentX(Component.LEFT_ALIGNMENT);
@@ -219,10 +209,12 @@ public class About_Pendent_Drop implements Command, ActionListener {
             rootpane.add(p);
         }
 
-        scrollPane.setViewportView(rootpane);
-
         //Display the window.
         aboutWin.pack();
+        // Check if window is higher than the screen size, and cap.
+        Dimension screenSize = Toolkit.getDefaultToolkit().getScreenSize();
+        if (aboutWin.getHeight() > screenSize.height) 
+            aboutWin.setExtendedState(JFrame.MAXIMIZED_VERT);
         aboutWin.setVisible(true);
     }
 
@@ -367,16 +359,24 @@ public class About_Pendent_Drop implements Command, ActionListener {
                 "interactively and/or fit selected parameters automatically.\n" +
                 "[For more details see PDF documentation below]");
         doc.put("Author", "Adrian Daerr");
-        doc.put("Version", "2.0.0 (release date 2015-09-04)");
+        doc.put("Version", "2.0.2");
         doc.put("Licence", "GPL");
-        doc.put("Plugin update site URL",
-                "http://sites.imagej.net/Daerr/");
-        doc.put("Author homepage URL",
-                "http://www.msc.univ-paris-diderot.fr/~daerr/");
+        doc.put("Publication", "Daerr, A and Mogne, A\n Pendent_Drop:" +
+                "An ImageJ Plugin to Measure the Surface Tension\n" +
+                "from an Image of a Pendent Drop.\n" +
+                "Journal of Open Research Software, 4: e3, DOI: 10.5334/jors.97");
+        doc.put("Open access publication URL", "http://dx.doi.org/10.5334/jors.97");
         doc.put("Detailed documentation PDF file",
                 "Goutte_pendante.pdf");
         doc.put("Example image: water drop, TIFF image",
                 "water_dsc1884.tif");
+        doc.put("Plugin page @ Fiji URL", "http://fiji.sc/Pendent_Drop");
+        doc.put("Plugin update site URL",
+                "http://sites.imagej.net/Daerr/");
+        doc.put("Source code URL", "https://github.com/adaerr/pendent-drop");
+        doc.put("Zenodo source code archive URL", "https://zenodo.org/badge/latestdoi/18554/adaerr/pendent-drop");
+        doc.put("Author homepage URL",
+                "http://www.msc.univ-paris-diderot.fr/~daerr/");
         return doc;
     }
 

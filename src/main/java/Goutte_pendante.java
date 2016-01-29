@@ -73,6 +73,9 @@ import org.scijava.widget.Button;
         initializer = "paramInitializer")
 public class Goutte_pendante implements Command, Previewable {
 
+    // Pointer to article on this plug-in
+    private static final String articleURL ="http://dx.doi.org/10.5334/jors.97";
+
     // -- Parameters --
 
     @Parameter
@@ -153,6 +156,12 @@ public class Goutte_pendante implements Command, Previewable {
                callback = "fitCheckboxCB")
     private boolean fit_include_gravity_angle = true;
 
+    @Parameter(label = "Cite as: "+articleURL,
+               description = "Paper on this software: A. Daerr & A. Mogne\n" +
+               "Journal of Open Research Software, 4: e3 (2016)",
+               callback = "articleCB")
+    private Button citationButton;
+    
     @Parameter(label = "Results", type = ItemIO.OUTPUT)
     private GenericTable results;
 
@@ -561,6 +570,28 @@ public class Goutte_pendante implements Command, Previewable {
                 fittability = "At least one parameter must be checked !";
         } else {
             if (fittability != null) fittability = null;
+        }
+    }
+
+    /** Open article URL in browser.
+     */
+    private void articleCB() {
+        if (!java.awt.Desktop.isDesktopSupported())
+            throw new UnsupportedOperationException("Desktop is not supported");
+
+        java.awt.Desktop desktop = java.awt.Desktop.getDesktop();
+
+        if (!desktop.isSupported( java.awt.Desktop.Action.BROWSE ))
+            throw new UnsupportedOperationException("Desktop doesn't support the BROWSE action");
+
+        try {
+            desktop.browse(new java.net.URI(articleURL));
+        }
+        catch (java.net.URISyntaxException e) {
+            log.error("Cast of \""+articleURL+"\" to URI failed.");
+        }
+        catch (java.io.IOException x) {
+            log.error(x);
         }
     }
 
