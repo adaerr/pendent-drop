@@ -335,7 +335,9 @@ public class Goutte_pendante implements Command, Previewable {
         ij.measure.Calibration cal = imp.getCalibration();
         if (cal.scaled()) {
             pixel_size = cal.pixelWidth;
-            rho_g = 9.81;
+            rho_g = 9.81; // assume physical dimensions are wanted,
+                          // *and* we are in the common use case of
+                          // water and air.
         } else {
             pixel_size = 1;
             rho_g = 1;
@@ -485,17 +487,18 @@ public class Goutte_pendante implements Command, Previewable {
                 xr --;
             xr ++; // so xl and xr point just to the right of the interface
 
-            // don't go further if not enough pixels for subpixel-fitting
-            if (xr - xl <= voisinage ||
-                xl - voisinage < 0 || xr + voisinage > bounds.width) {
+            // determine borders with sub-pixel precision if enough
+            // pixels left and right of integer precision locus
+            if (xr - xl > voisinage && xl - voisinage >= 0)
+                leftBorder[y]  = fitStep(ip, xl, y, voisinage, false);
+            else
                 leftBorder[y]  = xl - 0.5;
-                rightBorder[y] = xr - 0.5;
-                continue;
-            }
 
-            // now determine drop borders with sub-pixel precision
-            leftBorder[y]  = fitStep(ip, xl, y, voisinage, false);
-            rightBorder[y] = fitStep(ip, xr, y, voisinage, true);
+            if (xr - xl > voisinage && xr + voisinage <= bounds.width)
+                rightBorder[y] = fitStep(ip, xr, y, voisinage, true);
+            else
+                rightBorder[y] = xr - 0.5;
+
         } // end for y
 
         if (leftBorder == null)
