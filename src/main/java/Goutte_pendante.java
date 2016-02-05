@@ -156,6 +156,10 @@ public class Goutte_pendante implements Command, Previewable {
                callback = "fitCheckboxCB")
     private boolean fit_include_gravity_angle = true;
 
+    @Parameter(label = "Pendent rather than rising",
+               persist = false)
+    private boolean isPendentDrop;
+
     @Parameter(label = "Cite as: "+articleURL,
                description = "Paper on this software: A. Daerr & A. Mogne\n" +
                "Journal of Open Research Software, 4: e3 (2016)",
@@ -315,19 +319,23 @@ public class Goutte_pendante implements Command, Previewable {
                                (int) Math.round(r.y),
                                (int) Math.round(r.width),
                                (int) Math.round(r.height));
-        // work around getSelectionBounds providing old image
-        // dimensions after a crop
-        if (bounds.x + bounds.width > imp.getWidth() ||
-            bounds.y + bounds.height > imp.getHeight()) {
-            bounds.x = 0;
-            bounds.y = 0;
-            bounds.width = imp.getWidth();
-            bounds.height = imp.getHeight();
-        }
         // work around getSelectionBounds not seeing an imp's roi
         if (imp.getRoi() != null) {
             bounds = imp.getRoi().getBounds();
         }
+        // work around getSelectionBounds providing old image
+        // dimensions after a crop, or imp.getRoi providing bounds
+        // that are larger than the image
+        if (bounds.x < 0) bounds.x = 0;
+        if (bounds.y < 0) bounds.y = 0;
+        if (bounds.x + voisinage > imp.getWidth())
+            bounds.x = Math.max(0, imp.getWidth() - voisinage);
+        if (bounds.y + voisinage > imp.getHeight())
+            bounds.y = Math.max(0, imp.getHeight() - voisinage);
+        if (bounds.x + bounds.width > imp.getWidth())
+            bounds.width = imp.getWidth() - bounds.x;
+        if (bounds.y + bounds.height > imp.getHeight())
+            bounds.height = imp.getHeight() - bounds.y;
         log.info("drop region: +" + bounds.x + " +" +  bounds.y
                  + ", " +  bounds.width + " x " + bounds.height);
 
@@ -349,6 +357,9 @@ public class Goutte_pendante implements Command, Previewable {
 
     /** Analyze given image to roughly estimate drop shape descriptors. */
     protected void dropShapeEstimator(ImageProcessor ip) {
+
+        // detect if we have a pendent drop or a rising bubble
+        isPendentDrop = capillaryTubeAtTop(ip);
 
         if (! findDropBorders(ip)) {
             log.error("Could not detect drop, unrecoverable plugin failure.");
@@ -401,6 +412,8 @@ public class Goutte_pendante implements Command, Previewable {
             tip_x = ( bounds.x + bounds.width/2 ) * pixel_size;
         if (tip_y < bounds.y || tip_y >= bounds.y + bounds.height)
             tip_y = ( bounds.y + tip ) * pixel_size;
+        if (!isPendentDrop)
+            tip_y = ( 2*bounds.y + bounds.height - 1 ) * pixel_size - tip_y;
 
         // capillary length: from curvature difference between tip
         // (=1/tip_radius) and the point of maximum horizontal drop
@@ -451,6 +464,24 @@ public class Goutte_pendante implements Command, Previewable {
             capillary_length = 2*tip_radius;
     }
 
+    /** Very primitive way of deciding, for initial parameter / drop
+     * shape estimation purposes, whether we have a pendent drop or a
+     * rising bubble, i.e. whether the capillary tube is entering the
+     * image from above or below. To this end we count the number of
+     * dark pixels in the topmost and bottommost row of the selection,
+     * and do a majority vote :-). */
+    protected boolean capillaryTubeAtTop(ImageProcessor ip) {
+        int voteForTop = 0;
+        for (int x = 0 ; x < bounds.width; x++) {
+            if (ip.getPixelValue(bounds.x + x, bounds.y) <= threshold)
+                voteForTop ++;
+            if (ip.getPixelValue(bounds.x + x,
+                                 bounds.y + bounds.height - 1) <= threshold)
+                voteForTop --;
+        }
+        return (voteForTop >= 0);
+    }
+
     /** Detect drop borders and store positions in the
      * left/rightBorder arrays.
      */
@@ -459,13 +490,18 @@ public class Goutte_pendante implements Command, Previewable {
         rightBorder = null;
 
         for (int y = bounds.height - 1; y >= 0; y--) {
+            int ypix;
+            if (isPendentDrop)
+                ypix = bounds.y + y;
+            else
+                ypix = bounds.y + bounds.height - 1 - y;
 
             // find border positions with integer precision
 
             // left border first
             int xl = 0;
             while (xl < bounds.width &&
-                   ip.getPixelValue(bounds.x + xl, bounds.y + y) > threshold)
+                   ip.getPixelValue(bounds.x + xl, ypix) > threshold)
                 xl ++;
 
             if (xl >= bounds.width) {// drop not detected in this scanline
@@ -483,19 +519,19 @@ public class Goutte_pendante implements Command, Previewable {
             // right border next
             int xr = bounds.width - 1;
             while (xr > xl &&
-                   ip.getPixelValue(bounds.x + xr, bounds.y + y) > threshold)
+                   ip.getPixelValue(bounds.x + xr, ypix) > threshold)
                 xr --;
             xr ++; // so xl and xr point just to the right of the interface
 
             // determine borders with sub-pixel precision if enough
             // pixels left and right of integer precision locus
             if (xr - xl > voisinage && xl - voisinage >= 0)
-                leftBorder[y]  = fitStep(ip, xl, y, voisinage, false);
+                leftBorder[y]  = fitStep(ip, xl, ypix, voisinage, false);
             else
                 leftBorder[y]  = xl - 0.5;
 
             if (xr - xl > voisinage && xr + voisinage <= bounds.width)
-                rightBorder[y] = fitStep(ip, xr, y, voisinage, true);
+                rightBorder[y] = fitStep(ip, xr, ypix, voisinage, true);
             else
                 rightBorder[y] = xr - 0.5;
 
@@ -517,7 +553,7 @@ public class Goutte_pendante implements Command, Previewable {
         double minValue = Double.POSITIVE_INFINITY;
         double maxValue = Double.NEGATIVE_INFINITY;
         for (int dx = -n; dx < n; dx++) {
-            double v = ip.getPixelValue(bounds.x + x + dx, bounds.y + y);
+            double v = ip.getPixelValue(bounds.x + x + dx, y);
             acc += v;
             if (v > maxValue) maxValue = v;
             if (v < minValue) minValue = v;
@@ -646,8 +682,10 @@ public class Goutte_pendante implements Command, Previewable {
      * Expects tip radius and maximum z value to be given normalised
      * by capillary length. */
     ArrayList<Point2D.Double> calculateProfile(double tipRadius, double zMax) {
-        // desired number of points on profile
-        final int nPoints = 2*(bounds.height - bounds.y);
+        // desired number of points on profile: about 2 per pixel
+        // maybe there is a better way to determine that parameter value
+        // (e.g. choose a sensible value for ds instead)
+        final int nPoints = 2*bounds.height;
         final ArrayList<Point2D.Double> profile
             = new ArrayList<Point2D.Double>(nPoints);
 
@@ -764,7 +802,7 @@ public class Goutte_pendante implements Command, Previewable {
         toScreenT = AffineTransform.getTranslateInstance(tipX, tipY);
         toScreenT.scale(scale, scale);
         toScreenT.rotate(angle_deg * Math.PI/180);
-        toScreenT.quadrantRotate(2);
+        if (isPendentDrop) toScreenT.quadrantRotate(2);
         //return drop.createTransformedShape(toScreenT);
 
         // Generate a low resolution version of the drop path. If the
@@ -846,13 +884,14 @@ public class Goutte_pendante implements Command, Previewable {
     }
 
     double calcFitDistance(Shape drop) {
-        double[] leftIntersect = new double[bounds.height];
-        double[] rightIntersect = new double[bounds.height];
+        double[] leftIntersect = new double[bounds.height+1];
+        double[] rightIntersect = new double[bounds.height+1];
         for (int y = 0; y < bounds.height; y++) {
             leftIntersect[y] = Double.NaN;
             rightIntersect[y] = Double.NaN;
         }
-        // follow the contour and note intersection point for every line
+        // follow the contour (positively oriented, starts near top)
+        // and note intersection point for every line
         PathIterator pi = drop.getPathIterator(null);
         if (pi.isDone()) return Double.POSITIVE_INFINITY;
         double[] coord = new double[6];
@@ -860,9 +899,14 @@ public class Goutte_pendante implements Command, Previewable {
         int segType, yof, ynf;
         segType = pi.currentSegment(coord);
         xo = coord[0] - bounds.x;
-        yo = coord[1] - bounds.y;
+        if (isPendentDrop)
+            yo = coord[1] - bounds.y;
+        else
+            yo = bounds.y + bounds.height - 1 - coord[1];
         yof = (int)Math.floor(yo);
-        leftIntersect[(int)yo] = xo;
+        // contours touching the image border,
+        // force intersection detection at starting point
+        if (yof == 0) yof--;
 
         pi.next();
 
@@ -873,29 +917,51 @@ public class Goutte_pendante implements Command, Previewable {
                 continue;
             }
             xn = coord[0] - bounds.x;
-            yn = coord[1] - bounds.y;
-            // find out if this segment crossed a horizontal
-            //line of integer coordinate
+            if (isPendentDrop)
+                yn = coord[1] - bounds.y;
+            else
+                yn = bounds.y + bounds.height - 1 - coord[1];
             ynf = (int)Math.floor(yn);
+            // if this segment is too long it corresponds to a jump
+            // from one side of the drop to the other, across the base
+            if ((xn - xo)*(xn - xo) + (yn - yo)*(yn - yo) > 25) {
+                // we know which side we're on now because the path is
+                // positively oriented
+                if (yof < 0) yof = 0;
+                if (ynf < 0) ynf = 0;
+                if (isPendentDrop) {
+                    rightIntersect[yof] = xo;
+                    leftIntersect[ynf] = xn;
+                } else {
+                    leftIntersect[yof] = xo;
+                    rightIntersect[ynf] = xn;
+                }
+            } else
+            // find out if this segment crossed a horizontal
+            // line of integer coordinate
             if (ynf != yof) {// integer bound crossed !
                 int ymin = Math.max(0, Math.min(ynf, yof) + 1);
                 int ymax = Math.min(bounds.height - 1, Math.max(ynf, yof));
                 for (int yi = ymin; yi <= ymax; yi++) {
                     double frac = (yi - yo) / (yn - yo);
                     double xi = xo + frac * (xn - xo);
-                    if (ynf > yof) // left side
+                    if ((yn > yo) == isPendentDrop) // left side
                         leftIntersect[yi] = xi;
                     else
                         rightIntersect[yi] = xi;
                 }
             }
-            //log.info("lineto (" + xn + ", " + yn + ", " + ynf + ")");
             xo = xn;
             yo = yn;
             yof = ynf;
             pi.next();
         }
-        rightIntersect[(int)yo] = xo;
+        if (yof == 0) {
+            if (isPendentDrop && Double.isNaN(rightIntersect[yof]))
+                rightIntersect[yof] = xo;
+            else if (!isPendentDrop && Double.isNaN(leftIntersect[yof]))
+                leftIntersect[yof] = xo;
+        }
 
         // add values where there is no contour
         double dummyIntersect = bounds.width/2;
@@ -908,7 +974,6 @@ public class Goutte_pendante implements Command, Previewable {
             } else {
                 dummyIntersect = 0.5*(leftIntersect[y] + rightIntersect[y]);
             }
-            //log.info("y = " + y + ": left = " + leftIntersect[y] + ", right = " + rightIntersect[y]);
         }
 
         // calculate penalty by summing over the distances between the measured
@@ -918,25 +983,28 @@ public class Goutte_pendante implements Command, Previewable {
         double xtl = 0;
         double xmr = 0;
         double xtr = 0;
-        for (int y = 0; y < leftBorder.length; y++){
-          if (!Double.isNaN (leftBorder[y])){
-              xml = leftBorder[y];
-            if (!Double.isNaN (leftIntersect[y])){
-                xtl = leftIntersect[y];
-            } else {
-                xtl = bounds.width/2;
+        int N = 0;
+        for (int y = 0; y < leftBorder.length; y++) {
+            if (!Double.isNaN (leftBorder[y])) {
+                xml = leftBorder[y];
+                if (!Double.isNaN (leftIntersect[y])) {
+                    xtl = leftIntersect[y];
+                } else {
+                    xtl = bounds.width/2;
+                }
+                ChiSq += (xml - xtl)*(xml - xtl); //alternative: abs(xml - xtl)
+                N++;
             }
-            ChiSq += (xml - xtl)*(xml - xtl); //alternative: abs(xml - xtl)
-           }
 
-        if (!Double.isNaN(rightBorder[y])){
-              xmr = rightBorder[y];
-              if (!Double.isNaN(rightIntersect[y])){
-                  xtr = rightIntersect[y];
-              } else {
-                  xtr = bounds.width/2;
-              }
-            ChiSq += (xmr - xtr)*(xmr - xtr); //alternative: abs(xmr - xtr)
+            if (!Double.isNaN(rightBorder[y])) {
+                xmr = rightBorder[y];
+                if (!Double.isNaN(rightIntersect[y])) {
+                    xtr = rightIntersect[y];
+                } else {
+                    xtr = bounds.width/2;
+                }
+                ChiSq += (xmr - xtr)*(xmr - xtr); //alternative: abs(xmr - xtr)
+                N++;
             }
         }
         return ChiSq;
@@ -950,12 +1018,15 @@ public class Goutte_pendante implements Command, Previewable {
         AffineTransform t = new AffineTransform(1, 0, 0, 1, 0.5, 0.5);
         //imp.setOverlay(t.createTransformedShape(c), Color.red, null);
         Path2D.Float border = new Path2D.Float();
-        border.moveTo(bounds.x + leftBorder[0], bounds.y + 0);
-        for (int y = 0; y < leftBorder.length; y++) {
-        border.lineTo(bounds.x + leftBorder[y], bounds.y + y);
+        border.moveTo(bounds.x + leftBorder[0], bounds.y +
+                      (isPendentDrop ? 0 : bounds.height - 1));
+        for (int y = 1; y < leftBorder.length; y++) {
+            border.lineTo(bounds.x + leftBorder[y], bounds.y +
+                          (isPendentDrop ? y : bounds.height - 1 - y));
         }
         for (int y = rightBorder.length-1; y>=0; y--) {
-        border.lineTo(bounds.x + rightBorder[y], bounds.y + y);
+            border.lineTo(bounds.x + rightBorder[y], bounds.y +
+                          (isPendentDrop ? y : bounds.height - 1 - y));
         }
         border.closePath();
 
@@ -1569,7 +1640,7 @@ public class Goutte_pendante implements Command, Previewable {
                         capillary_length
                         + A*increment.get(SHAPE_PARAM.CAPILLARY_LENGTH),
                         tip_x + A*increment.get(SHAPE_PARAM.TIP_X),
-                        tip_y+ A*increment.get(SHAPE_PARAM.TIP_Y),
+                        tip_y + A*increment.get(SHAPE_PARAM.TIP_Y),
                         gravity_deg
                         + A*increment.get(SHAPE_PARAM.GRAVITY_ANGLE));
         }
@@ -1743,12 +1814,21 @@ public class Goutte_pendante implements Command, Previewable {
             return fitDistance;
         }
 
+        /* Non-dimensional drop height */
+        private double yMax() {
+                double yMax;
+                if (isPendentDrop)
+                    yMax = geometry.tip_y - bounds.y * pixel_size;
+                else
+                    yMax = ( bounds.y + bounds.height - 1 ) * pixel_size
+                        - geometry.tip_y;
+                return yMax / geometry.capillary_length;
+        }
+        
         public double getVolume() {
             if (volume < 0) {
                 final double scale = geometry.capillary_length;
-                final double yMax = (geometry.tip_y - bounds.y * pixel_size)
-                    / scale;
-                volume = scale*scale*scale * calcVolume(halfAdimProfile, yMax);
+                volume = scale*scale*scale* calcVolume(halfAdimProfile, yMax());
             }
             return volume;
         }
@@ -1756,9 +1836,7 @@ public class Goutte_pendante implements Command, Previewable {
         public double getSurface() {
             if (surface < 0) {
                 final double scale = geometry.capillary_length;
-                final double yMax = (geometry.tip_y - bounds.y * pixel_size)
-                    / scale;
-                surface = scale*scale * calcSurface(halfAdimProfile, yMax);
+                surface = scale*scale* calcSurface(halfAdimProfile, yMax());
             }
             return surface;
         }
