@@ -359,7 +359,7 @@ public class About_Pendent_Drop implements Command, ActionListener {
                 "interactively and/or fit selected parameters automatically.\n" +
                 "[For more details see PDF documentation below]");
         doc.put("Author", "Adrian Daerr");
-        doc.put("Version", "2.0.3");
+        doc.put("Version", "2.0.4");
         doc.put("Licence", "GPL");
         doc.put("Publication", "Daerr, A and Mogne, A\n Pendent_Drop:" +
                 "An ImageJ Plugin to Measure the Surface Tension\n" +

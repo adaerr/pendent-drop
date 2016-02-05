@@ -249,7 +249,7 @@ public class Goutte_pendante implements Command, Previewable {
         results.setColumnHeader(6, "surface tension");
         results.setColumnHeader(7, "volume");
         results.setColumnHeader(8, "surface");
-        results.setColumnHeader(9, "fit distance");
+        results.setColumnHeader(9, "RMS fit distance (pixels)");
 
         // iterate over slices of the stack
         for (int n=0; n<stack.getSize(); n++) {
@@ -278,7 +278,7 @@ public class Goutte_pendante implements Command, Previewable {
             results.set(6, n, surface_tension);
             results.set(7, n, dropFit.getVolume());
             results.set(8, n, dropFit.getSurface());
-            results.set(9, n, dropFit.getFitDistance());
+            results.set(9, n, Math.sqrt(dropFit.getFitDistance()));
 
             imp.setSlice(n+1);
             updateOverlay(dropFit.getDimShape());
@@ -1007,7 +1007,7 @@ public class Goutte_pendante implements Command, Previewable {
                 N++;
             }
         }
-        return ChiSq;
+        return ChiSq/N;
     }
 
     /** Set given curve as overlay on image. */
@@ -1050,8 +1050,8 @@ public class Goutte_pendante implements Command, Previewable {
                  + d2s(drop.getVolume(), significantDigits) +
                  "\n       drop surface = "
                  + d2s(drop.getSurface(), significantDigits) +
-                 "\n       fitDistance = "
-                 + d2s(drop.getFitDistance(), significantDigits));
+                 "\n       RMS fit distance (pixels) = "
+                 + d2s(Math.sqrt(drop.getFitDistance()), significantDigits));
     }
 
     /** Find a drop shape that minimises the distance to the given
@@ -1824,7 +1824,7 @@ public class Goutte_pendante implements Command, Previewable {
                         - geometry.tip_y;
                 return yMax / geometry.capillary_length;
         }
-        
+
         public double getVolume() {
             if (volume < 0) {
                 final double scale = geometry.capillary_length;
