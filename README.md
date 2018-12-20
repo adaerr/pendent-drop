@@ -1,3 +1,5 @@
+[![](https://travis-ci.com/adaerr/pendent-drop.svg?branch=master)](https://travis-ci.com/adaerr/pendent-drop)
+
 Pendent Drop ImageJ plugin
 ==========================
 

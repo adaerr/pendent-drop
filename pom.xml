@@ -69,13 +69,17 @@
 		<url>https://github.com/adaerr/pendent-drop/issues</url>
 	</issueManagement>
 	<ciManagement>
-		<system>None</system>
+		<system>Travis CI</system>
+		<url>https://travis-ci.com/adaerr/pendent-drop</url>
 	</ciManagement>
 
 	<properties>
 		<main-class>Goutte_pendante</main-class>
 		<license.licenseName>gpl_v3</license.licenseName>
 		<license.copyrightOwners>Adrian Daerr</license.copyrightOwners>
+
+		<!-- NB: Deploy releases to the ImageJ Maven repository. -->
+		<releaseProfiles>deploy-to-imagej</releaseProfiles>
 	</properties>
 
 	<repositories>
