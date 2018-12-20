@@ -49,8 +49,6 @@ import net.imagej.display.ImageDisplay;
 import net.imagej.display.OverlayService;
 import net.imagej.overlay.Overlay;
 import net.imagej.overlay.RectangleOverlay;
-import net.imagej.table.DefaultGenericTable;
-import net.imagej.table.GenericTable;
 
 import org.scijava.ItemIO;
 import org.scijava.app.StatusService;
@@ -62,6 +60,8 @@ import org.scijava.log.LogService;
 import org.scijava.plugin.Parameter;
 import org.scijava.plugin.Plugin;
 import org.scijava.service.ServiceHelper;
+import org.scijava.table.DefaultGenericTable;
+import org.scijava.table.GenericTable;
 import org.scijava.util.Colors;
 import org.scijava.util.RealRect;
 import org.scijava.widget.Button;
