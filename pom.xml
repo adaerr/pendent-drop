@@ -21,7 +21,7 @@
 	drop method.</description>
 
 	<properties>
-		<main-class>Goutte_Pendante</main-class>
+		<main-class>Goutte_pendante</main-class>
 	</properties>
 
 	<repositories>
