@@ -3,7 +3,18 @@
 Pendent Drop ImageJ plugin
 ==========================
 
-# Pendent drop profile integration and fitting
+**Questions, issues & problems**: please use the [pendent-drop topic
+on the ImageJ
+Forum](https://forum.image.sc/t/pendent-drop-plugin-how-to-use/290) to
+ask about _installation and usage_ problems with this plugin - that
+way this kind of information is easily found in one place by other
+users, too, and other ImageJ users can tune in to help. The [github
+issue tracker](https://github.com/adaerr/pendent-drop/issues) is meant
+for _bugs and programming issues_. If in doubt go to the ImageJ Forum.
+
+# What's the purpose of this plugin ?
+
+_Pendent drop profile integration and fitting_
 
 This plug-in allows for interactive or automated adjustment of a
 profile to an image of a pendent drop. The surface tension, volume
