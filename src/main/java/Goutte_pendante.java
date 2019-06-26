@@ -117,11 +117,11 @@ public class Goutte_pendante implements Command, Previewable {
                persist = false)
     private double gravity_deg;
 
-    @Parameter(label = "Pixel size",
-               initializer = "initPixelSize",
+    @Parameter(label = "Scale (length/pixel)",
+               //initializer = "initPixelSpacing",
                persist = false,
                min = "1e-300")
-    private double pixel_size;
+    private double pixel_spacing;
 
     @Parameter(label = "Density contrast times g")
     private double rho_g;
@@ -346,15 +346,15 @@ public class Goutte_pendante implements Command, Previewable {
         log.info("drop region: +" + bounds.x + " +" +  bounds.y
                  + ", " +  bounds.width + " x " + bounds.height);
 
-        // pixel size and density contrast parameters
+        // pixel spacing and density contrast parameters
         ij.measure.Calibration cal = imp.getCalibration();
         if (cal.scaled()) {
-            pixel_size = cal.pixelWidth;
+            pixel_spacing = cal.pixelWidth;
             rho_g = 9.81; // assume physical dimensions are wanted,
                           // *and* we are in the common use case of
                           // water and air.
         } else {
-            pixel_size = 1;
+            pixel_spacing = 1;
             rho_g = 1;
         }
 
@@ -383,12 +383,12 @@ public class Goutte_pendante implements Command, Previewable {
             yCoord[i] = i;
         }
         Polynome tipFit = linearFit(yCoord, radiusSquare);
-        tip_radius = 0.5 * Math.abs(tipFit.getCoeff(1)) * pixel_size;
+        tip_radius = 0.5 * Math.abs(tipFit.getCoeff(1)) * pixel_spacing;
 
         // in case estimation fails badly assign some reasonable value
         if (Double.isNaN(tip_radius) || tip_radius <= 0 ||
-            tip_radius > Math.min(bounds.width,bounds.height) * pixel_size)
-            tip_radius = tip * pixel_size / 4;
+            tip_radius > Math.min(bounds.width,bounds.height) * pixel_spacing)
+            tip_radius = tip * pixel_spacing / 4;
 
         // direction of gravity: tilt of center line
         //
@@ -398,29 +398,29 @@ public class Goutte_pendante implements Command, Previewable {
                                 - rightBorder[tip] - leftBorder[tip] );
         // in case estimation fails badly assign some reasonable value
         if (Double.isNaN(dX)) dX = 0;
-        final double dY = tip - tip_radius / pixel_size;
+        final double dY = tip - tip_radius / pixel_spacing;
         final double tiltAngleRad = Math.atan2(-dX,dY);
         gravity_deg = tiltAngleRad * 180/Math.PI;
 
         // drop tip
         tip_x = ( bounds.x +
-                  0.5*( rightBorder[tip] + leftBorder[tip] )) * pixel_size;
-        tip_y = ( bounds.y + tip ) * pixel_size;
+                  0.5*( rightBorder[tip] + leftBorder[tip] )) * pixel_spacing;
+        tip_y = ( bounds.y + tip ) * pixel_spacing;
         final double tip_correction = tipFit.getCoeff(0) / tipFit.getCoeff(1);
         if (!Double.isNaN(tip_correction) && Math.abs(tip_correction) < tipNeighbourhood)
-            tip_y += tip_correction * pixel_size;
+            tip_y += tip_correction * pixel_spacing;
         // the former expression assumes the drop is vertical, but we can
         // correct for tilt:
         tip_x -= tip_radius * Math.sin(tiltAngleRad);
         tip_y -= tip_radius * (1 - Math.cos(tiltAngleRad));
 
         // in case estimation fails badly assign some reasonable value
-        if (tip_x/pixel_size < bounds.x || tip_x/pixel_size >= bounds.x + bounds.width)
-            tip_x = ( bounds.x + bounds.width/2 ) * pixel_size;
+        if (tip_x/pixel_spacing < bounds.x || tip_x/pixel_spacing >= bounds.x + bounds.width)
+            tip_x = ( bounds.x + bounds.width/2 ) * pixel_spacing;
         if (tip_y < bounds.y || tip_y >= bounds.y + bounds.height)
-            tip_y = ( bounds.y + tip ) * pixel_size;
+            tip_y = ( bounds.y + tip ) * pixel_spacing;
         if (!isPendentDrop)
-            tip_y = ( 2*bounds.y + bounds.height - 1 ) * pixel_size - tip_y;
+            tip_y = ( 2*bounds.y + bounds.height - 1 ) * pixel_spacing - tip_y;
 
         // capillary length: from curvature difference between tip
         // (=1/tip_radius) and the point of maximum horizontal drop
@@ -458,13 +458,13 @@ public class Goutte_pendante implements Command, Previewable {
         double c1 = 1 / bellyFit.getValueAt(0); // horizontal curvature
         double c2 = - 2*bellyFit.getCoeff(2) /
             Math.cos(Math.atan(bellyFit.getCoeff(1)));
-        double c0 = pixel_size / tip_radius;// tip curvature (pix^-1)
+        double c0 = pixel_spacing / tip_radius;// tip curvature (pix^-1)
 
         //log.info("c0 = "+c0+", c1 = "+c1+", c2 = "+c2);
 
         // pressure difference between yBelly and tip gives capillary
         // length estimate
-        capillary_length = Math.sqrt( (tip-yBelly) / (2*c0-c1-c2) ) *pixel_size;
+        capillary_length = Math.sqrt( (tip-yBelly) / (2*c0-c1-c2) ) *pixel_spacing;
 
         // in case estimation fails badly assign some reasonable value
         if (Double.isNaN(capillary_length) || capillary_length == 0)
@@ -1779,13 +1779,13 @@ public class Goutte_pendante implements Command, Previewable {
             if (c.tip_radius > 0 && c.capillary_length > 0) {
                 halfAdimProfile =
                     calculateProfile(c.tip_radius / c.capillary_length,
-                                     1.5 * bounds.height * pixel_size /
+                                     1.5 * bounds.height * pixel_spacing /
                                      c.capillary_length);
                 closedAdimProfile = makeClosedPath(halfAdimProfile);
                 dimShape = contourToScreen(closedAdimProfile,
-                                           c.capillary_length / pixel_size,
-                                           c.tip_x / pixel_size,
-                                           c.tip_y / pixel_size,
+                                           c.capillary_length / pixel_spacing,
+                                           c.tip_x / pixel_spacing,
+                                           c.tip_y / pixel_spacing,
                                            c.gravity_deg,
                                            getBoundsArea());
                 fitDistance = calcFitDistance(dimShape);
@@ -1825,9 +1825,9 @@ public class Goutte_pendante implements Command, Previewable {
         private double yMax() {
                 double yMax;
                 if (isPendentDrop)
-                    yMax = geometry.tip_y - bounds.y * pixel_size;
+                    yMax = geometry.tip_y - bounds.y * pixel_spacing;
                 else
-                    yMax = ( bounds.y + bounds.height - 1 ) * pixel_size
+                    yMax = ( bounds.y + bounds.height - 1 ) * pixel_spacing
                         - geometry.tip_y;
                 return yMax / geometry.capillary_length;
         }
