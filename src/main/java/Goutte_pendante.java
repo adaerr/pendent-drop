@@ -313,6 +313,13 @@ public class Goutte_pendante implements Command, Previewable {
      * {@link #gravity_deg}
      */
     protected void paramInitializer() {
+        // Check if an image is displayed (there should be a way to
+        // get a selection without requiring this ?)
+        if (display == null) {
+            ij.IJ.error("Pendent Drop requires an image.\n(ImageDisplay null in initializer)");
+            log.error("Can't get ROI selection of drop: no image open ?\nnet.imagej.display.ImageDisplay object was null in paramInitializer.");
+            throw new RuntimeException("Can't get ROI selection of drop: no image open ?");
+        }
         // get selection bounds as rectangle
         RealRect r = overlayService.getSelectionBounds(display);
         bounds = new Rectangle((int) Math.round(r.x),
