@@ -37,6 +37,14 @@ import java.util.List;
 import java.util.HashMap;
 import java.util.Iterator;
 
+import java.net.URI;
+import java.net.URL;
+import java.net.URISyntaxException;
+import java.io.InputStream;
+import java.io.FileOutputStream;
+import java.io.File;
+import java.io.IOException;
+
 import ij.ImagePlus;
 import ij.ImageStack;
 import ij.process.ImageProcessor;
@@ -45,15 +53,24 @@ import net.imagej.Dataset;
 import net.imagej.ImageJ;
 import net.imagej.axis.Axes;
 import net.imagej.axis.AxisType;
+import net.imagej.display.DataView;
 import net.imagej.display.ImageDisplay;
+import net.imagej.display.ImageDisplayService;
 import net.imagej.display.OverlayService;
 import net.imagej.overlay.Overlay;
 import net.imagej.overlay.RectangleOverlay;
+
+//import net.imagej.legacy.convert.ImageDisplayToImagePlusConverter;
+//import net.imglib2.img.display.imagej.ImageJFunctions;
+//import net.imagej.legacy.translate.ImagePlusCreator;
 
 import org.scijava.ItemIO;
 import org.scijava.app.StatusService;
 import org.scijava.command.Command;
 import org.scijava.command.Previewable;
+import org.scijava.convert.ConvertService;
+import org.scijava.display.DisplayService;
+import org.scijava.display.Display;
 import org.scijava.io.DefaultIOService;
 import org.scijava.io.IOService;
 import org.scijava.log.LogService;
@@ -62,6 +79,8 @@ import org.scijava.plugin.Plugin;
 import org.scijava.service.ServiceHelper;
 import org.scijava.table.DefaultGenericTable;
 import org.scijava.table.GenericTable;
+import org.scijava.ui.UIService;
+import org.scijava.ui.DialogPrompt;
 import org.scijava.util.Colors;
 import org.scijava.util.RealRect;
 import org.scijava.widget.Button;
@@ -92,6 +111,21 @@ public class Goutte_pendante implements Command, Previewable {
 
     @Parameter
     private StatusService statusService;
+
+    @Parameter
+    private IOService ioService;
+
+    @Parameter
+    private UIService uiService;
+
+    @Parameter
+    private DisplayService displayService;
+
+    @Parameter
+    private ImageDisplayService imageDisplayService;
+
+    @Parameter
+    private ConvertService convertService;
 
     // The 'min' attribute requires a String, but
     // Double.toString(Double.MIN_VALUE) is not a constant to the
@@ -316,9 +350,48 @@ public class Goutte_pendante implements Command, Previewable {
         // Check if an image is displayed (there should be a way to
         // get a selection without requiring this ?)
         if (display == null) {
+            DialogPrompt.Result result =
+                uiService.showDialog("Pendent Drop cannot find an open image but requires one.\nDo you want the plugin to open an example image for testing and continue ?",
+                                     "ImageJ: Pendent Drop plugin" ,
+                                     DialogPrompt.MessageType.QUESTION_MESSAGE,
+                                     DialogPrompt.OptionType.YES_NO_OPTION);
+            if (result == DialogPrompt.Result.YES_OPTION) {
+                log.info("Open example image");
+                // Name of example image packaged in the jar
+                final String exampleImage = "water_dsc1884.tif";
+                URI uri;
+                try {
+                    uri = getClass().getResource(exampleImage).toURI();
+                    if (uri.getScheme().equals("jar")) // need to extract from jar
+                        uri = jarURItoTmpFileURI(uri);
+                    // Open using appropriate plugin.
+                    final Dataset dataset;
+                    try {
+                        dataset = (Dataset)ioService.open(uri.toString());
+                        // display the dataset
+                        uiService.show(dataset);
+                        // now fill in the missing parameters so the plugin can continue
+                        display = (ImageDisplay)displayService.createDisplay("Water drop", imageDisplayService.createDataView(dataset));
+                        //display = (Display<DataView>)displayService.createDisplay("Water drop", imageDisplayService.createDataView(dataset));
+                        //display = displayService.createDisplay("Water drop", dataset);
+                        //display = convertService.convert(dataset, ImageDisplay.class);
+                        imp = convertService.convert(dataset, ImagePlus.class);
+                        //imp = ImageDisplayToImagePlusConverter(display, ij.ImagePlus.class);
+                        //imp = ImageJFunctions.wrap(dataset, "Water drop");
+                        //imp = ImagePlusCreator.createLegacyImage(display);
+                    } catch (IOException e) {
+                        log.error(e);
+                    }
+                } catch (URISyntaxException e) {
+                    log.error(e);
+                }
+                log.info(display);
+                log.info(imp);
+            } else {
             ij.IJ.error("Pendent Drop requires an image.\n(ImageDisplay null in initializer)");
             log.error("Can't get ROI selection of drop: no image open ?\nnet.imagej.display.ImageDisplay object was null in paramInitializer.");
             throw new RuntimeException("Can't get ROI selection of drop: no image open ?");
+            }
         }
         // get selection bounds as rectangle
         RealRect r = overlayService.getSelectionBounds(display);
@@ -1848,4 +1921,42 @@ public class Goutte_pendante implements Command, Previewable {
             return surface;
         }
     }
+
+    /* This and its helper method should really be factored among
+     * Goutte_pendante and About_goutte_pendante */
+    public URI jarURItoTmpFileURI(URI uri) {
+        if (!uri.getScheme().equals("jar"))
+            return uri; // do nothing if not in jar
+        File tmpFile = jarURItoTmpFile(uri);
+        uri = tmpFile.toURI();
+        return uri;
+    }
+
+    public File jarURItoTmpFile(URI uri) {
+        File tmpFile = null;
+        if (uri.getScheme().equals("jar")) {
+            try {
+                URL url = uri.toURL();
+                String suffix =
+                    (new File(uri.getSchemeSpecificPart())).getName();
+                InputStream is = url.openStream();
+                //log.debug("have stream: "+is.available());
+                tmpFile = File.createTempFile("gpp",suffix);
+                tmpFile.deleteOnExit();
+                FileOutputStream os = new FileOutputStream(tmpFile);
+                while (true) {
+                    int b = is.read();
+                    if (b < 0) break;
+                    os.write(b);
+                }
+                is.close();
+                os.close();
+            } catch (IOException e) {
+                log.error("IOException while extracting from jar...");
+                log.error(e);
+            }
+        }
+        return tmpFile;
+    }
+
 }
