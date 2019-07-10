@@ -127,6 +127,9 @@ public class Goutte_pendante implements Command, Previewable {
     @Parameter
     private ConvertService convertService;
 
+    @Parameter
+    private org.scijava.Context context;
+
     // The 'min' attribute requires a String, but
     // Double.toString(Double.MIN_VALUE) is not a constant to the
     // compiler, so we use an explicit value close to the real
@@ -362,29 +365,24 @@ public class Goutte_pendante implements Command, Previewable {
                 URI uri;
                 try {
                     uri = getClass().getResource(exampleImage).toURI();
-                    if (uri.getScheme().equals("jar")) // need to extract from jar
-                        uri = jarURItoTmpFileURI(uri);
-                    // Open using appropriate plugin.
-                    final Dataset dataset;
-                    try {
-                        dataset = (Dataset)ioService.open(uri.toString());
-                        // display the dataset
-                        uiService.show(dataset);
-                        // now fill in the missing parameters so the plugin can continue
-                        display = (ImageDisplay)displayService.createDisplay("Water drop", imageDisplayService.createDataView(dataset));
-                        //display = (Display<DataView>)displayService.createDisplay("Water drop", imageDisplayService.createDataView(dataset));
-                        //display = displayService.createDisplay("Water drop", dataset);
-                        //display = convertService.convert(dataset, ImageDisplay.class);
-                        imp = convertService.convert(dataset, ImagePlus.class);
-                        //imp = ImageDisplayToImagePlusConverter(display, ij.ImagePlus.class);
-                        //imp = ImageJFunctions.wrap(dataset, "Water drop");
-                        //imp = ImagePlusCreator.createLegacyImage(display);
-                    } catch (IOException e) {
-                        log.error(e);
-                    }
                 } catch (URISyntaxException e) {
                     log.error(e);
+                    return;
                 }
+                if (uri.getScheme().equals("jar")) // need to extract from jar
+                    uri = jarURItoTmpFileURI(uri);
+                // Open using appropriate plugin.
+                final Dataset dataset;
+                try {
+                        dataset = (Dataset)ioService.open(uri.toString());
+                } catch (IOException e) {
+                    log.error(e);
+                    return;
+                }
+                // now fill in the missing parameters so the plugin can continue
+                display = (ImageDisplay)displayService.createDisplay("Water drop", dataset);
+                addROIOverlayToExample(display, context, overlayService);
+                imp = convertService.convert(dataset, ImagePlus.class);
                 log.info(display);
                 log.info(imp);
             } else {
@@ -1472,7 +1470,7 @@ public class Goutte_pendante implements Command, Previewable {
 
     /** Tests our command. */
     public static void main(final String... args) throws Exception {
-        final String testImagePath = "/home/adrian/Programmes/plugins_ImageJ_src/Traitement_Gouttes/src/test/resources/eauContrasteMaxStack.tif";
+        final String testImagePath = "src/main/resources/water_dsc1884.tif";
 
         // Launch ImageJ as usual.
         //final ImageJ ij = net.imagej.Main.launch(args);
@@ -1488,24 +1486,8 @@ public class Goutte_pendante implements Command, Previewable {
         final ImageDisplay imageDisplay =
             (ImageDisplay) ij.display().createDisplay(dataset);
 
-        // create a rectangle
-        final RectangleOverlay rectangle = new RectangleOverlay(ij.getContext());
-        rectangle.setOrigin(110, 0);
-        rectangle.setOrigin(60, 1);
-        rectangle.setExtent(340, 0);
-        rectangle.setExtent(420, 1);
-        rectangle.setLineColor(Colors.HONEYDEW);
-        rectangle.setLineWidth(1);
-
-        // add the overlays to the display
-        final List<Overlay> overlays = new ArrayList<Overlay>();
-        overlays.add(rectangle);
-        ij.overlay().addOverlays(imageDisplay, overlays);
-        for (final net.imagej.display.DataView view : imageDisplay) {
-            if (view instanceof net.imagej.display.OverlayView) {
-                view.setSelected(true);
-            }
-        }
+        // add rectangular selection
+        addROIOverlayToExample(imageDisplay, ij.getContext(), ij.overlay());
 
         // display the dataset
         ij.ui().show(imageDisplay);
@@ -1959,4 +1941,24 @@ public class Goutte_pendante implements Command, Previewable {
         return tmpFile;
     }
 
+    private static void addROIOverlayToExample(ImageDisplay imageDisplay, org.scijava.Context scijavaContext, OverlayService overlayService) {
+        // create a rectangle
+        final RectangleOverlay rectangle = new RectangleOverlay(scijavaContext);
+        rectangle.setOrigin(40, 0);
+        rectangle.setOrigin(64, 1);
+        rectangle.setExtent(240, 0);
+        rectangle.setExtent(280, 1);
+        rectangle.setLineColor(Colors.HONEYDEW);
+        rectangle.setLineWidth(1);
+
+        // add the overlays to the display
+        final List<Overlay> overlays = new ArrayList<Overlay>();
+        overlays.add(rectangle);
+        overlayService.addOverlays(imageDisplay, overlays);
+        for (final net.imagej.display.DataView view : imageDisplay) {
+            if (view instanceof net.imagej.display.OverlayView) {
+                view.setSelected(true);
+            }
+        }
+    }
 }
